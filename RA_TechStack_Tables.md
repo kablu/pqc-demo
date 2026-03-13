@@ -1,6 +1,8 @@
 # Registration Authority (RA) System — Technology Stack Reference Tables
-**Version:** 2.0 | **Date:** 2026-03-14 | **Project:** PKI Registration Authority
-**Base:** Java 21 LTS + Spring Boot 3.3.x + Spring Framework 6.1.x
+**Version:** 2.1 | **Date:** 2026-03-14 | **Project:** PKI Registration Authority
+**Base:** Java 21 LTS + Spring Boot 4.0.3 + Spring Framework 7.0.6
+
+> ⚠️ **Migration Note:** Spring Boot 4.0 requires Java 17 minimum (Java 21 recommended). Upgrade path: `3.3.x → 3.5.x → 4.0.x`. Spring Framework 7.0 is the aligned core framework.
 
 ---
 
@@ -10,12 +12,12 @@
 |---|---|---|---|
 | JDK Runtime | Eclipse Temurin (OpenJDK) | **21.0.3 LTS** | Primary Java runtime; Virtual Threads (Project Loom), ZGC garbage collector, long-term support until 2029 |
 | JDK Alt | Amazon Corretto | **21.0.3 LTS** | AWS-optimized OpenJDK distribution; drop-in Temurin alternative |
-| Application Framework | Spring Boot | **3.3.4** | Auto-configuration, embedded Tomcat, production-ready starter POMs |
-| Core Framework | Spring Framework | **6.1.12** | Dependency injection, AOP, AOT compilation, virtual thread executor support |
-| Web Layer | Spring Web MVC | **6.1.12** | REST controllers, EST/SCEP/CMP/ACME protocol endpoint handling |
+| Application Framework | Spring Boot | **4.0.3** *(Feb 2026)* | Auto-configuration, embedded Tomcat 11, production-ready starter POMs; JSpecify null-safety, API Versioning, Java 25 support |
+| Core Framework | Spring Framework | **7.0.6** *(Mar 2026)* | Dependency injection, AOP, AOT compilation, virtual thread executor; Jakarta EE 11, JSpecify null annotations |
+| Web Layer | Spring Web MVC | **7.0.6** *(Mar 2026)* | REST controllers, EST/SCEP/CMP/ACME protocol endpoint handling; multiple-view-per-request support |
 | Build Tool | Apache Maven | **3.9.9** | Multi-module build, dependency management, CI/CD integration |
-| Build Tool Alt | Gradle | **8.10** | DSL-based alternative build system |
-| API Gateway | Spring Cloud Gateway | **4.1.5** | Request routing, rate limiting, mTLS termination, circuit breaker |
+| Build Tool Alt | Gradle | **9.4.0** *(Mar 2026)* | DSL-based build system; Java 26 support, stable task graph, improved test reporting, Spring Boot 4.0 compatible |
+| API Gateway | Spring Cloud Gateway | **4.2.x** *(2025.0.x BOM)* | Request routing, rate limiting, mTLS termination, circuit breaker; Spring Boot 4.0 aligned |
 | Workflow Engine | Spring State Machine | **3.2.1** | Certificate request lifecycle FSM (Submitted → Validated → Approved → Issued) |
 | Async Processing | Spring Async + Virtual Threads | **JDK 21 built-in** | High-throughput non-blocking certificate request processing |
 | REST Documentation | SpringDoc OpenAPI (Swagger UI) | **2.6.0** | Auto-generated API docs from annotations |
@@ -31,8 +33,8 @@
 
 | Component | Technology | Version (Latest) | Purpose |
 |---|---|---|---|
-| Security Framework | Spring Security | **6.3.3** | AuthN/AuthZ, method-level RBAC (`@PreAuthorize`), filter chain |
-| OAuth2 / OIDC | Spring Security OAuth2 Resource Server | **6.3.3** | JWT validation, Keycloak token integration |
+| Security Framework | Spring Security | **7.0.x** *(Spring Boot 4.0 aligned)* | AuthN/AuthZ, method-level RBAC (`@PreAuthorize`), filter chain; Jakarta EE 11 compatible |
+| OAuth2 / OIDC | Spring Security OAuth2 Resource Server | **7.0.x** | JWT validation, Keycloak token integration; Spring Boot 4.0 aligned |
 | Identity Provider | Keycloak | **25.0.6** | OIDC / OAuth2 / SAML2 identity broker; operator SSO, TOTP MFA |
 | LDAP / AD Integration | Spring LDAP | **3.2.4** | Active Directory user lookup, RA subscriber identity verification |
 | Secrets Management | HashiCorp Vault | **1.17.6** | HSM PIN storage, DB credentials, API keys — zero plaintext secrets |
@@ -47,9 +49,9 @@
 | Pod Security | Kubernetes Pod Security Standards | **Restricted** | `runAsNonRoot`, `readOnlyRootFilesystem`, drop ALL capabilities |
 | Image Signing | Cosign + Notation | **2.4.1 / 1.2.0** | Supply chain integrity — sign and verify container images |
 | CVE Scanning | Trivy | **0.56.2** | Container + dependency CVE scanning in CI/CD; block on CRITICAL |
-| RBAC (Application) | Spring Security + Keycloak Roles | **6.3.x** | RA_OPERATOR, RA_OFFICER, RA_MANAGER, RA_AUDITOR, RA_ADMIN |
-| Rate Limiting | Spring Cloud Gateway + Redis | **4.1.5** | Per-IP, per-subscriber, per-profile request throttling |
-| HTTP Security Headers | Spring Security (built-in) | **6.3.3** | HSTS, CSP, X-Frame-Options, X-Content-Type-Options |
+| RBAC (Application) | Spring Security + Keycloak Roles | **7.0.x** | RA_OPERATOR, RA_OFFICER, RA_MANAGER, RA_AUDITOR, RA_ADMIN |
+| Rate Limiting | Spring Cloud Gateway + Redis | **4.2.x** | Per-IP, per-subscriber, per-profile request throttling |
+| HTTP Security Headers | Spring Security (built-in) | **7.0.x** | HSTS, CSP, X-Frame-Options, X-Content-Type-Options |
 | JWT Lifecycle | Keycloak tokens | Access: 15 min / Refresh: 8 hr | Short-lived tokens to limit blast radius on compromise |
 
 ---
@@ -258,16 +260,20 @@
 ```xml
 <properties>
     <!-- ===== RUNTIME ===== -->
+    <!-- Spring Boot 4.0.3 released Feb 2026 | Spring Framework 7.0.6 released Mar 2026 -->
+    <!-- Upgrade path: 3.3.x → 3.5.x → 4.0.x (do NOT skip 3.5) -->
     <java.version>21</java.version>
-    <spring-boot.version>3.3.4</spring-boot.version>
-    <spring-framework.version>6.1.12</spring-framework.version>
-    <spring-security.version>6.3.3</spring-security.version>
+    <spring-boot.version>4.0.3</spring-boot.version>           <!-- Feb 19, 2026 -->
+    <spring-framework.version>7.0.6</spring-framework.version>  <!-- Mar 13, 2026 -->
+    <spring-security.version>7.0.x</spring-security.version>    <!-- Aligned with Spring Boot 4.0 -->
     <spring-statemachine.version>3.2.1</spring-statemachine.version>
-    <spring-cloud.version>2023.0.3</spring-cloud.version>
+    <spring-cloud.version>2025.0.x</spring-cloud.version>        <!-- Spring Boot 4.0 compatible BOM -->
     <spring-vault.version>3.1.2</spring-vault.version>
     <spring-ldap.version>3.2.4</spring-ldap.version>
-    <spring-kafka.version>3.2.4</spring-kafka.version>
-    <spring-batch.version>5.1.2</spring-batch.version>
+    <spring-kafka.version>3.3.x</spring-kafka.version>           <!-- Aligned with Spring Boot 4.0 -->
+    <spring-batch.version>5.2.x</spring-batch.version>           <!-- Aligned with Spring Boot 4.0 -->
+    <!-- Build tools -->
+    <!-- gradle.version>9.4.0</gradle.version -->                <!-- Mar 4, 2026 — use wrapper -->
 
     <!-- ===== CRYPTOGRAPHY ===== -->
     <bc-fips.version>2.0.0</bc-fips.version>
