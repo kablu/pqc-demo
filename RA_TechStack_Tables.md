@@ -230,7 +230,7 @@
 |---|---|---|---|
 | Unit Testing | JUnit 5 (Jupiter) | **5.11.2** | Unit tests for crypto operations, CSR validation, workflow logic |
 | Mocking | Mockito | **5.14.1** | Mock HSM, CA connector, LDAP in unit tests |
-| Integration Testing | Spring Boot Test | **3.3.4** | Full Spring context tests with `@SpringBootTest` |
+| Integration Testing | Spring Boot Test | **4.0.3** | Full Spring context tests with `@SpringBootTest` |
 | Container Testing | Testcontainers | **1.20.2** | Spin up real PostgreSQL, Redis, Keycloak, Kafka in tests |
 | API Contract | WireMock | **3.9.1** | Mock EJBCA CMP/REST endpoints; offline CA simulation |
 | PKI Test Data | Bouncy Castle test utilities | **1.78.1** | Generate test CA, sign test CSRs, build test cert chains |
@@ -252,6 +252,302 @@
 | OCSP Responder | Custom Spring Boot + BC | **RFC 6960** | Real-time certificate status; Redis-cached responses; HSM-signed |
 | CRL Service | BC X509v2CRLBuilder + Nginx | **RFC 5280** | CRL generation (scheduled) + static file hosting via Nginx CDN |
 | CT Log Client | Google Trillian client | **1.7.0** | RFC 6962 — submit issued TLS certs to Certificate Transparency logs |
+
+---
+
+## 14. SPRING BOOT TEST TECH STACK
+
+> Spring Boot 4.0 Test module (`spring-boot-starter-test`) is the **all-in-one** test dependency.
+> It auto-includes JUnit 5, Mockito, AssertJ, Hamcrest, JSONAssert, JsonPath, and Awaitility.
+
+---
+
+### 14A. CORE TEST FRAMEWORK
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Test Starter | `spring-boot-starter-test` | **4.0.3** | Master test BOM — includes JUnit 5, Mockito, AssertJ, Hamcrest, JSONAssert, JsonPath, Awaitility |
+| Test Runner | JUnit 5 (Jupiter Engine) | **5.11.2** | `@Test`, `@ParameterizedTest`, `@Nested`, `@ExtendWith` — primary test runner for all RA tests |
+| JUnit Platform | JUnit Platform Launcher | **1.11.2** | Test discovery and execution engine; Maven Surefire + Gradle Test integration |
+| Mocking Framework | Mockito Core | **5.14.1** | `@Mock`, `@InjectMocks`, `@Captor` — mock HSM service, CA connector, LDAP provider |
+| Spring Mock Beans | `@MockBean` / `@SpyBean` | **4.0.3** | Replace Spring beans with Mockito mocks inside `ApplicationContext` |
+| Assertion Library | AssertJ | **3.26.3** | Fluent assertions: `assertThat(cert).isNotNull().hasFieldOrProperty("serialNumber")` |
+| Assertion Alt | Hamcrest | **2.2** | Matcher-based assertions; used with MockMvc `andExpect(jsonPath(...))` |
+| JSON Assertion | JSONAssert | **1.5.3** | Assert JSON REST response bodies: `strict` vs `lenient` mode |
+| JSON Path | JsonPath (Jayway) | **2.9.0** | `$.certificates[0].subject` — navigate JSON responses in test assertions |
+| Async Assertion | Awaitility | **4.2.2** | `await().atMost(5, SECONDS).until(...)` — test async cert issuance, Kafka consumers |
+
+---
+
+### 14B. SPRING BOOT TEST SLICES *(Context-Scoped Tests)*
+
+> Test slices load only the relevant layer of the Spring context — faster than full `@SpringBootTest`
+
+| Slice Annotation | Technology | Version | Purpose / What It Loads |
+|---|---|---|---|
+| `@SpringBootTest` | Spring Boot Test | **4.0.3** | Full application context; end-to-end integration test for complete RA workflow |
+| `@WebMvcTest` | Spring Boot Test | **4.0.3** | Only Spring MVC layer (controllers, filters, `@ControllerAdvice`); use for `EstController`, `ScepController`, `OcspController` |
+| `@DataJpaTest` | Spring Boot Test | **4.0.3** | Only JPA layer (Hibernate, DataSource, Flyway); H2 in-memory by default; use for `CertificateRequestRepository` tests |
+| `@DataRedisTest` | Spring Boot Test | **4.0.3** | Only Redis auto-configuration; use with `@EmbeddedRedis` or Testcontainers Redis |
+| `@RestClientTest` | Spring Boot Test | **4.0.3** | Only `RestClient` / `RestTemplate` auto-config; use to test EJBCA REST connector |
+| `@JsonTest` | Spring Boot Test | **4.0.3** | Only Jackson serialization; test `CertificateRequestDto`, `OcspResponseDto` JSON mapping |
+| `@WebFluxTest` | Spring Boot Test | **4.0.3** | Only WebFlux layer; for reactive OCSP / EST endpoints |
+| `@SpringBatchTest` | Spring Batch Test | **5.2.x** | Spring Batch job testing; use for CRL generation job, cert expiry notification batch |
+| `@MockMvcTest` (custom) | Spring Security Test | **7.0.x** | Test `SecurityFilterChain`, mTLS, `@PreAuthorize` on RA endpoints |
+
+---
+
+### 14C. WEB LAYER TESTING (MockMvc / WebTestClient)
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| MockMvc | Spring Test (`MockMvc`) | **7.0.6** | Test Spring MVC controllers without real HTTP; simulates EST/SCEP/OCSP HTTP calls |
+| MockMvc Auto-config | `@AutoConfigureMockMvc` | **4.0.3** | Auto-wire `MockMvc` in `@SpringBootTest` without manual setup |
+| MockMvc Security | `SecurityMockMvcConfigurer` | **7.0.x** | Test `@PreAuthorize`, `@Secured`, mTLS client cert injection via `with(x509(cert))` |
+| WebTestClient | Spring WebFlux Test | **7.0.6** | Reactive HTTP test client; fluent API for reactive OCSP/EST endpoint testing |
+| TestRestTemplate | Spring Boot Test | **4.0.3** | Full HTTP integration test with real embedded server (`@SpringBootTest(webEnvironment=RANDOM_PORT)`) |
+| MockMvc PKI Helper | Spring Security X.509 | **7.0.x** | `mockMvc.perform(get("/est/cacerts").with(x509(clientCert)))` — inject client cert in tests |
+
+**Sample MockMvc Test (EST Endpoint):**
+```java
+@WebMvcTest(EstController.class)
+@AutoConfigureMockMvc
+class EstControllerTest {
+
+    @Autowired MockMvc mockMvc;
+    @MockBean  CertificateRequestService requestService;
+
+    @Test
+    void simpleEnroll_validCsr_returns200() throws Exception {
+        byte[] csrDer = TestPkiHelper.generateCsr("CN=test-device");
+
+        mockMvc.perform(post("/.well-known/est/simpleenroll")
+                .contentType("application/pkcs10")
+                .content(csrDer)
+                .with(x509(TestPkiHelper.clientCert())))   // mTLS simulation
+            .andExpect(status().isOk())
+            .andExpect(content().contentType("application/pkcs7-mime"));
+    }
+}
+```
+
+---
+
+### 14D. TESTCONTAINERS (Real Infrastructure in Tests)
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Testcontainers Core | Testcontainers | **1.20.2** | Docker-based real infra in tests; no mocks for DB/cache/messaging |
+| PostgreSQL Module | `testcontainers-postgresql` | **1.20.2** | Real PostgreSQL 16 container for `@DataJpaTest` / `@SpringBootTest` |
+| Redis Module | `testcontainers-redis` | **1.20.2** | Real Redis 7.4 container for OCSP cache, session, rate-limit tests |
+| Kafka Module | `testcontainers-kafka` | **1.20.2** | Real Kafka 3.8 container for `CertificateIssuedEvent` consumer tests |
+| Keycloak Module | `testcontainers-keycloak` | **3.4.0** | Real Keycloak 25 container for OAuth2/JWT integration tests |
+| Vault Module | `testcontainers-vault` | **1.20.2** | Real HashiCorp Vault for dynamic secrets testing |
+| immudb Module | Custom Docker container | **1.9.5** | Real immudb for audit log integration tests |
+| Spring Boot Integration | `@ServiceConnection` | **4.0.3** | Auto-wire Testcontainers into Spring `@Bean`s — zero manual config |
+
+**Sample Testcontainers Setup:**
+```java
+@SpringBootTest
+@Testcontainers
+class CertificateRequestServiceIT {
+
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer<?> postgres =
+        new PostgreSQLContainer<>("postgres:16");
+
+    @Container
+    @ServiceConnection
+    static RedisContainer redis =
+        new RedisContainer(DockerImageName.parse("redis:7.4"));
+
+    @Autowired CertificateRequestService service;
+
+    @Test
+    void submitRequest_persistsToDbAndCachesStatus() {
+        var request = service.submit(TestPkiHelper.validCsrRequest());
+        assertThat(request.getStatus()).isEqualTo(PENDING_VALIDATION);
+    }
+}
+```
+
+---
+
+### 14E. SECURITY & PKI-SPECIFIC TESTING
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Spring Security Test | `spring-security-test` | **7.0.x** | `@WithMockUser`, `@WithUserDetails`, `SecurityMockMvcRequestPostProcessors` |
+| X.509 Mock | `SecurityMockMvcRequestPostProcessors.x509()` | **7.0.x** | Inject mock client certificate for mTLS endpoint tests |
+| OAuth2 Mock | `SecurityMockMvcRequestPostProcessors.jwt()` | **7.0.x** | Inject mock JWT with RA roles for `@PreAuthorize` tests |
+| PKI Test Data Generator | Bouncy Castle (test scope) | **1.78.1** | Generate self-signed CA, issue test certificates, build PKCS#10 CSRs in tests |
+| PKCS#11 HSM Simulator | SoftHSM2 (via Testcontainers) | **2.6.1** | Software HSM for CI/CD — no real Utimaco needed in test pipeline |
+| OCSP Mock | WireMock | **3.9.1** | Mock EJBCA OCSP responses; test RA revocation logic offline |
+| CMP Mock | WireMock | **3.9.1** | Mock EJBCA CMP `ip` (InitializationResponse) for CA connector tests |
+
+---
+
+### 14F. API CONTRACT & EXTERNAL MOCK TESTING
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| WireMock | WireMock | **3.9.1** | Standalone HTTP mock server; simulate EJBCA REST/CMP, LDAP HTTP, CT log |
+| Spring Cloud Contract | Spring Cloud Contract | **4.1.x** | Consumer-driven contract tests between RA and CA integration layer |
+| Pact | Pact JVM | **4.6.x** | Alternative CDC (Consumer-Driven Contract) testing for RA ↔ CA REST API |
+| REST-assured | REST-assured | **5.5.0** | Fluent DSL for full HTTP integration tests against running RA server |
+| Spring Cloud WireMock | `spring-cloud-contract-wiremock` | **4.1.x** | Auto-configure WireMock stubs from Spring Cloud Contract specs |
+
+---
+
+### 14G. PERFORMANCE & LOAD TESTING
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Load Testing | k6 | **0.54.x** | Simulate 100K cert requests/day; EST/SCEP/ACME endpoint throughput |
+| JVM Profiler | Async-profiler + JFR | **3.0 / JDK 21** | CPU/memory profiling during load tests; identify HSM signing bottlenecks |
+| Benchmarking | JMH (Java Microbenchmark Harness) | **1.37** | Micro-benchmark crypto operations: CSR parsing, cert signing, OCSP response time |
+| Gatling | Gatling | **3.11.x** | Alternative load testing; Scala/Java DSL; rich HTML reports |
+
+---
+
+### 14H. CODE QUALITY & MUTATION TESTING
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Mutation Testing | PIT (Pitest) | **1.17.1** | Inject code mutations; validate test suite kills all mutants in crypto/validation code |
+| Code Coverage | JaCoCo | **0.8.12** | Line/branch coverage reports; enforce 80%+ coverage gate in CI/CD |
+| Static Analysis | SonarQube / SonarCloud | **10.6.x** | Code quality, security hotspots, CVE detection in RA source code |
+| Checkstyle | Checkstyle + Maven plugin | **10.18.x** | Enforce PKI team coding standards; no raw crypto, proper exception handling |
+| SpotBugs | SpotBugs + Find Security Bugs | **4.8.6** | Static bug + security vulnerability detection (`HARD_CODE_KEY`, `WEAK_CIPHER`) |
+| OWASP Dependency Check | OWASP Dependency-Check Maven | **10.0.4** | Scan `pom.xml` dependencies for known CVEs; fail build on CVSS ≥ 7 |
+
+---
+
+### 14I. COMPLETE TEST DEPENDENCY MANIFEST (pom.xml test scope)
+
+```xml
+<!-- ===== SPRING BOOT TEST STACK ===== -->
+<dependencies>
+
+    <!-- Master test starter — includes JUnit 5, Mockito, AssertJ, Hamcrest, JSONAssert, JsonPath, Awaitility -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-test</artifactId>
+        <version>4.0.3</version>
+        <scope>test</scope>
+    </dependency>
+
+    <!-- Spring Security Test — @WithMockUser, x509(), jwt() post-processors -->
+    <dependency>
+        <groupId>org.springframework.security</groupId>
+        <artifactId>spring-security-test</artifactId>
+        <version>7.0.x</version>
+        <scope>test</scope>
+    </dependency>
+
+    <!-- Testcontainers — real PostgreSQL, Redis, Kafka, Keycloak, Vault -->
+    <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers-bom</artifactId>
+        <version>1.20.2</version>
+        <type>pom</type>
+        <scope>import</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>postgresql</artifactId>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>kafka</artifactId>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>com.redis</groupId>
+        <artifactId>testcontainers-redis</artifactId>
+        <version>2.2.2</version>
+        <scope>test</scope>
+    </dependency>
+
+    <!-- WireMock — mock EJBCA CMP/REST, OCSP, CT log endpoints -->
+    <dependency>
+        <groupId>org.wiremock</groupId>
+        <artifactId>wiremock</artifactId>
+        <version>3.9.1</version>
+        <scope>test</scope>
+    </dependency>
+
+    <!-- REST-assured — fluent HTTP test DSL -->
+    <dependency>
+        <groupId>io.rest-assured</groupId>
+        <artifactId>rest-assured</artifactId>
+        <version>5.5.0</version>
+        <scope>test</scope>
+    </dependency>
+
+    <!-- JMH — microbenchmark crypto & signing operations -->
+    <dependency>
+        <groupId>org.openjdk.jmh</groupId>
+        <artifactId>jmh-core</artifactId>
+        <version>1.37</version>
+        <scope>test</scope>
+    </dependency>
+
+    <!-- Bouncy Castle — PKI test data: generate CA, CSRs, certs -->
+    <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcprov-jdk18on</artifactId>
+        <version>1.78.1</version>
+        <scope>test</scope>
+    </dependency>
+
+</dependencies>
+```
+
+---
+
+### 14J. TEST LAYER SUMMARY MAP
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│              RA SYSTEM — TEST PYRAMID                               │
+├──────────────────────────────┬──────────────────────────────────────┤
+│ TEST TYPE                    │ TOOLS USED                           │
+├──────────────────────────────┼──────────────────────────────────────┤
+│ Unit Tests                   │ JUnit 5 + Mockito + AssertJ          │
+│ (crypto, validation, FSM)    │ @ExtendWith(MockitoExtension.class)  │
+├──────────────────────────────┼──────────────────────────────────────┤
+│ Slice Tests (fast)           │ @WebMvcTest  → MockMvc               │
+│ (controller / JPA / Redis)   │ @DataJpaTest → H2 in-memory          │
+│                              │ @JsonTest    → Jackson mapping        │
+├──────────────────────────────┼──────────────────────────────────────┤
+│ Integration Tests            │ @SpringBootTest + Testcontainers      │
+│ (full context + real infra)  │ Real PostgreSQL / Redis / Kafka       │
+│                              │ WireMock for EJBCA / OCSP             │
+├──────────────────────────────┼──────────────────────────────────────┤
+│ Security Tests               │ spring-security-test                  │
+│ (RBAC / mTLS / JWT)          │ x509(), jwt(), @WithMockUser          │
+├──────────────────────────────┼──────────────────────────────────────┤
+│ API Contract Tests           │ Spring Cloud Contract / Pact          │
+│ (RA ↔ CA interface)          │ Consumer-Driven Contract              │
+├──────────────────────────────┼──────────────────────────────────────┤
+│ Performance Tests            │ k6 (100K req/day) + JMH (micro)      │
+│ (load / benchmark)           │ Gatling (alternative)                 │
+├──────────────────────────────┼──────────────────────────────────────┤
+│ Security Scanning            │ OWASP ZAP + SpotBugs + Dep-Check     │
+│ (SAST / DAST / CVE)          │ SonarQube + Checkstyle                │
+├──────────────────────────────┼──────────────────────────────────────┤
+│ Mutation Testing             │ PIT (Pitest) — kill mutants           │
+│ (test quality gate)          │ JaCoCo — 80%+ coverage gate           │
+└──────────────────────────────┴──────────────────────────────────────┘
+```
 
 ---
 
@@ -306,11 +602,19 @@
     <opentelemetry.version>1.40.0</opentelemetry.version>
     <logstash-encoder.version>7.4</logstash-encoder.version>
 
-    <!-- ===== TESTING ===== -->
+    <!-- ===== TESTING (see Section 14 for full Spring Boot Test stack) ===== -->
+    <spring-boot-test.version>4.0.3</spring-boot-test.version>
+    <spring-security-test.version>7.0.x</spring-security-test.version>
     <junit.version>5.11.2</junit.version>
     <testcontainers.version>1.20.2</testcontainers.version>
     <mockito.version>5.14.1</mockito.version>
     <wiremock.version>3.9.1</wiremock.version>
+    <rest-assured.version>5.5.0</rest-assured.version>
+    <jmh.version>1.37</jmh.version>
+    <jacoco.version>0.8.12</jacoco.version>
+    <pitest.version>1.17.1</pitest.version>
+    <spotbugs.version>4.8.6</spotbugs.version>
+    <owasp-dep-check.version>10.0.4</owasp-dep-check.version>
 </properties>
 ```
 
