@@ -1304,4 +1304,246 @@ val versions = mapOf(
 
 ---
 
+## Section 20 — Resiliency Tech Stack (Spring Boot 4.0 Compatible)
+
+> **Purpose:** Fault-tolerance patterns — Circuit Breaker, Rate Limiter, Retry, Bulkhead, Time Limiter — applied to RA's CA backend calls (EJBCA/CMP), HSM operations, OCSP responder, and external IdP (Keycloak). All libraries integrate with Micrometer metrics and Spring Boot Actuator.
+
+### 20A — Core Resiliency Framework
+
+| Component | Technology | Version *(Mar 2026)* | Gradle Artifact | Purpose |
+|-----------|-----------|----------------------|-----------------|---------|
+| Fault-Tolerance Core | **Resilience4j** | **2.2.0** | `implementation("io.github.resilience4j:resilience4j-spring-boot3:2.2.0")` | Circuit Breaker, Retry, Rate Limiter, Bulkhead, Time Limiter — Spring Boot 3/4 starter |
+| Reactive Support | Resilience4j Reactor | **2.2.0** | `implementation("io.github.resilience4j:resilience4j-reactor:2.2.0")` | Project Reactor (`Mono`/`Flux`) operators wrapping Resilience4j decorators |
+| AOP / Annotations | Resilience4j AOP | **2.2.0** | `implementation("io.github.resilience4j:resilience4j-spring:2.2.0")` | `@CircuitBreaker`, `@Retry`, `@RateLimiter`, `@Bulkhead`, `@TimeLimiter` annotations |
+| Metrics Bridge | Resilience4j Micrometer | **2.2.0** | `implementation("io.github.resilience4j:resilience4j-micrometer:2.2.0")` | Exports CB state, retry count, rate-limiter permits to Micrometer → Prometheus |
+| Retry (Spring Core) | **Spring Retry** | **2.0.10** | `implementation("org.springframework.retry:spring-retry:2.0.10")` | `@Retryable` / `@Recover` for Spring-managed beans; Exponential backoff |
+| Timeout / Cancel | Project Reactor | **3.7.4** | (transitive via Spring WebFlux) | `.timeout(Duration)` operators; non-blocking time-limiting |
+| Health Indicators | Spring Boot Actuator | **4.0.3** | `implementation("org.springframework.boot:spring-boot-starter-actuator")` | Exposes `/actuator/health` with CB state; `/actuator/circuitbreakers` |
+
+---
+
+### 20B — Resilience4j Pattern Reference
+
+| Pattern | Annotation | Config Property Prefix | RA Usage Scenario |
+|---------|-----------|------------------------|-------------------|
+| **Circuit Breaker** | `@CircuitBreaker(name="ejbca")` | `resilience4j.circuitbreaker.instances.ejbca.*` | EJBCA CMP endpoint — open after 5 failures in 10s sliding window |
+| **Retry** | `@Retry(name="ocsp", fallbackMethod="cachedOcsp")` | `resilience4j.retry.instances.ocsp.*` | OCSP responder — 3 retries, 200ms exponential backoff, retry on `SocketTimeoutException` |
+| **Rate Limiter** | `@RateLimiter(name="estEnroll")` | `resilience4j.ratelimiter.instances.estEnroll.*` | EST `/simpleenroll` — 100 req/s per RA node; burst protection |
+| **Bulkhead** | `@Bulkhead(name="hsm", type=SEMAPHORE)` | `resilience4j.bulkhead.instances.hsm.*` | HSM signing calls — max 20 concurrent; protects Utimaco slot pool |
+| **Thread-Pool Bulkhead** | `@Bulkhead(name="ldapSync", type=THREADPOOL)` | `resilience4j.thread-pool-bulkhead.instances.ldapSync.*` | LDAP sync tasks — dedicated pool; isolates from request-handling threads |
+| **Time Limiter** | `@TimeLimiter(name="caRevoke")` | `resilience4j.timelimiter.instances.caRevoke.*` | CA revocation call — 3s hard timeout; prevents hung threads |
+
+---
+
+### 20C — Resiliency Configuration (`application.yml` snippet)
+
+```yaml
+resilience4j:
+  circuitbreaker:
+    instances:
+      ejbca:
+        registerHealthIndicator: true
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 10
+        failureRateThreshold: 50          # Open after 50% failures
+        waitDurationInOpenState: 30s
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        recordExceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+  retry:
+    instances:
+      ocsp:
+        maxAttempts: 3
+        waitDuration: 200ms
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 2
+        retryExceptions:
+          - java.net.SocketTimeoutException
+  ratelimiter:
+    instances:
+      estEnroll:
+        limitForPeriod: 100
+        limitRefreshPeriod: 1s
+        timeoutDuration: 0s               # Fail-fast; do not queue
+  bulkhead:
+    instances:
+      hsm:
+        maxConcurrentCalls: 20
+        maxWaitDuration: 500ms
+  timelimiter:
+    instances:
+      caRevoke:
+        timeoutDuration: 3s
+        cancelRunningFuture: true
+```
+
+---
+
+### 20D — Resiliency Gradle Dependencies (`build.gradle.kts`)
+
+```kotlin
+// Resiliency — Section 20
+val resilience4jVersion = "2.2.0"
+
+implementation("io.github.resilience4j:resilience4j-spring-boot3:$resilience4jVersion")
+implementation("io.github.resilience4j:resilience4j-reactor:$resilience4jVersion")
+implementation("io.github.resilience4j:resilience4j-micrometer:$resilience4jVersion")
+implementation("org.springframework.retry:spring-retry:2.0.10")
+implementation("org.springframework.boot:spring-boot-starter-actuator")
+implementation("org.springframework.boot:spring-boot-starter-aop")   // Required for @CircuitBreaker AOP proxy
+
+// Test support
+testImplementation("io.github.resilience4j:resilience4j-test:$resilience4jVersion")
+```
+
+---
+
+### 20E — Resiliency Version Summary
+
+| Library | Version | Spring Boot 4.0 Compatible | Notes |
+|---------|---------|---------------------------|-------|
+| Resilience4j | **2.2.0** | ✅ | Requires `spring-boot-starter-aop`; Jakarta EE 11 compatible |
+| Spring Retry | **2.0.10** | ✅ | Simpler `@Retryable`; good for Spring bean-level retry |
+| Bucket4j (optional) | **8.10.1** | ✅ | Redis-backed distributed rate limiting; supplement to Resilience4j RateLimiter |
+| Micrometer (metrics) | **1.16.x** | ✅ | Auto-registered by `resilience4j-micrometer`; CB state exposed as gauge |
+| Spring Boot Actuator | **4.0.3** | ✅ | `/actuator/health/circuitBreakers` — live CB state in health endpoint |
+
+---
+
+## Section 21 — DBCP (Database Connection Pool) Tech Stack
+
+> **Purpose:** Connection pool layer between RA application and PostgreSQL 16.4. Covers HikariCP (primary), JDBC driver, pool monitoring, and tuning parameters for RA's write-heavy (certificate issuance) + read-heavy (OCSP/status) workloads.
+
+### 21A — Core DBCP Components
+
+| Component | Technology | Version *(Mar 2026)* | Gradle Artifact | Purpose |
+|-----------|-----------|----------------------|-----------------|---------|
+| Connection Pool | **HikariCP** | **5.1.0** | `implementation("com.zaxxer:HikariCP:5.1.0")` | Primary DBCP; default in Spring Boot; lowest latency JDBC pool |
+| JDBC Driver | **PostgreSQL JDBC** | **42.7.4** | `runtimeOnly("org.postgresql:postgresql:42.7.4")` | Type-4 JDBC driver for PostgreSQL 16.x; supports SSL, SCRAM-SHA-256 |
+| R2DBC Pool | **r2dbc-pool** | **1.0.2** | `implementation("io.r2dbc:r2dbc-pool:1.0.2")` | Reactive (non-blocking) connection pool for R2DBC; used in reactive RA modules |
+| R2DBC Driver | **r2dbc-postgresql** | **1.0.7** | `implementation("org.postgresql:r2dbc-postgresql:1.0.7")` | R2DBC driver for PostgreSQL; paired with r2dbc-pool |
+| Spring Data JDBC | Spring Boot Starter JDBC | **4.0.3** | `implementation("org.springframework.boot:spring-boot-starter-jdbc")` | Auto-configures HikariCP `DataSource`; `JdbcTemplate`, `NamedParameterJdbcTemplate` |
+| JPA / Hibernate | Spring Boot Starter Data JPA | **4.0.3** | `implementation("org.springframework.boot:spring-boot-starter-data-jpa")` | Hibernate 6.5.x ORM; uses HikariCP pool underneath |
+| Connection Pool Metrics | HikariCP + Micrometer | **5.1.0 / 1.16.x** | Auto-registered via `micrometer-core` on classpath | Exposes `hikaricp.*` metrics to Prometheus (pool size, pending threads, timeout rate) |
+| Pool Health Check | Spring Boot Actuator | **4.0.3** | `implementation("org.springframework.boot:spring-boot-starter-actuator")` | `/actuator/health/db` — DataSource ping; `/actuator/metrics/hikaricp.connections` |
+
+---
+
+### 21B — HikariCP Tuning (`application.yml`)
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres-primary:5432/ra_db?ssl=true&sslmode=verify-full&sslrootcert=/certs/ca.crt
+    username: ${DB_USER}
+    password: ${DB_PASS}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: RA-HikariPool
+      # -- Pool sizing (formula: connections = ((core_count * 2) + effective_spindle_count))
+      maximum-pool-size: 20            # Max active connections per RA pod
+      minimum-idle: 5                  # Idle connections to maintain
+      idle-timeout: 600000             # 10 min — reclaim idle connections
+      max-lifetime: 1800000            # 30 min — recycle connections (< PostgreSQL idle_in_transaction_session_timeout)
+      connection-timeout: 30000        # 30s — throw if no conn available
+      keepalive-time: 300000           # 5 min — prevent firewall dropping idle conns (pg_cancel_backend)
+      validation-timeout: 5000         # 5s — isValid() check
+      leak-detection-threshold: 60000  # 60s — log stack trace if conn not returned
+      # -- PostgreSQL optimizations
+      connection-init-sql: "SET application_name='pqc-ra'; SET search_path=ra_schema,public"
+      data-source-properties:
+        prepareThreshold: 5            # Switch to server-side prepared statements after 5 executions
+        preparedStatementCacheQueries: 256
+        tcpKeepAlive: true
+        socketTimeout: 30
+        connectTimeout: 10
+        reWriteBatchedInserts: true    # Batch INSERT performance for bulk cert issuance
+        ssl: true
+        sslmode: verify-full
+```
+
+---
+
+### 21C — R2DBC Pool Config (Reactive Modules)
+
+```yaml
+spring:
+  r2dbc:
+    url: r2dbc:postgresql://postgres-primary:5432/ra_db
+    username: ${DB_USER}
+    password: ${DB_PASS}
+    pool:
+      enabled: true
+      initial-size: 5
+      max-size: 20
+      max-idle-time: 10m
+      max-life-time: 30m
+      acquire-retry: 3
+      max-acquire-time: 30s
+      validation-query: "SELECT 1"
+```
+
+---
+
+### 21D — DBCP Gradle Dependencies (`build.gradle.kts`)
+
+```kotlin
+// DBCP — Section 21
+// HikariCP (included via spring-boot-starter-jdbc, explicit for version pinning)
+implementation("com.zaxxer:HikariCP:5.1.0")
+
+// JDBC
+implementation("org.springframework.boot:spring-boot-starter-jdbc")
+implementation("org.springframework.boot:spring-boot-starter-data-jpa")  // includes HikariCP + Hibernate
+runtimeOnly("org.postgresql:postgresql:42.7.4")                          // PostgreSQL JDBC driver
+
+// R2DBC (reactive modules only)
+implementation("org.springframework.boot:spring-boot-starter-data-r2dbc")
+runtimeOnly("org.postgresql:r2dbc-postgresql:1.0.7")
+implementation("io.r2dbc:r2dbc-pool:1.0.2")
+
+// Observability (pool metrics auto-registered when on classpath)
+implementation("org.springframework.boot:spring-boot-starter-actuator")
+implementation("io.micrometer:micrometer-registry-prometheus")           // hikaricp.* metrics → Prometheus
+
+// Test — in-memory PostgreSQL for unit tests
+testImplementation("org.testcontainers:postgresql")                      // Real PG in containers
+```
+
+---
+
+### 21E — DBCP Version Summary
+
+| Library | Version | Notes |
+|---------|---------|-------|
+| **HikariCP** | **5.1.0** | Spring Boot 4.0.3 default pool; zero additional config needed for basic setup |
+| **PostgreSQL JDBC** | **42.7.4** | Full PostgreSQL 16.x feature support; SCRAM-SHA-256 auth; SSL verify-full |
+| **r2dbc-pool** | **1.0.2** | Reactive pool; Spring Boot 4.0 auto-configured via `spring-boot-starter-data-r2dbc` |
+| **r2dbc-postgresql** | **1.0.7** | Reactive PostgreSQL driver (R2DBC 1.0 SPI) |
+| **Flyway** | **10.18.0** | Schema migration (see Section 5); runs before HikariCP pool warms up |
+| **Hibernate** | **6.5.3.Final** | ORM layer sitting above HikariCP; Second-level cache via Caffeine |
+| **PgBouncer** *(infra)* | **1.23.1** | Optional sidecar connection pooler at K8s pod level; reduces PG server connections at scale |
+| **Micrometer** | **1.16.x** | `hikaricp.connections.active`, `.pending`, `.timeout` auto-exposed |
+| **Spring Boot Actuator** | **4.0.3** | `/actuator/health/db` liveness; `/actuator/metrics/hikaricp.connections.active` |
+
+---
+
+### 21F — Connection Pool Monitoring Metrics (HikariCP → Prometheus)
+
+| Metric Name | Type | Description | Alert Threshold |
+|-------------|------|-------------|-----------------|
+| `hikaricp.connections.active` | Gauge | Currently borrowed connections | > 18 (90% of max=20) → warn |
+| `hikaricp.connections.idle` | Gauge | Idle connections in pool | < 2 → warn (pool exhaustion risk) |
+| `hikaricp.connections.pending` | Gauge | Threads waiting for connection | > 5 → critical |
+| `hikaricp.connections.timeout` | Counter | Total connection timeout events | > 0/min → alert |
+| `hikaricp.connections.creation` | Timer | Time to create new connection | p99 > 1s → warn |
+| `hikaricp.connections.acquire` | Timer | Time from borrow request to received | p99 > 100ms → warn |
+| `hikaricp.connections.usage` | Timer | Connection hold time (borrow → return) | p99 > 5s → warn (leak risk) |
+| `hikaricp.connections.max` | Gauge | Configured `maximumPoolSize` | — |
+| `hikaricp.connections.min` | Gauge | Configured `minimumIdle` | — |
+
+---
+
 *PKI Architecture Team | Confidential — Internal Use Only | Next Review: 2026-09-14*
