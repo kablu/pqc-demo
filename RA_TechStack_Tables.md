@@ -1546,4 +1546,687 @@ testImplementation("org.testcontainers:postgresql")                      // Real
 
 ---
 
+---
+
+## 22. NOTIFICATION SERVICE TECH STACK
+
+> Handles email alerts, SMS, push notifications, and internal system events for certificate lifecycle (issuance, expiry warnings, revocation, approval requests).
+
+### 22A. Core Notification Libraries
+
+| Component | Technology | Version | Gradle Artifact | Purpose / Notes |
+|---|---|---|---|---|
+| Email (SMTP) | Spring Boot Mail Starter | **4.0.3** | `implementation("org.springframework.boot:spring-boot-starter-mail:4.0.3")` | SMTP-based email dispatch; wraps Jakarta Mail; TLS/STARTTLS support |
+| SMTP Provider | Jakarta Mail (Eclipse Angus) | **2.0.3** | `implementation("org.eclipse.angus:jakarta.mail:2.0.3")` | Jakarta EE 11 mail API; replaces `javax.mail`; pulled transitively by starter |
+| Email Templates | Thymeleaf Spring Boot Starter | **4.0.3** | `implementation("org.springframework.boot:spring-boot-starter-thymeleaf:4.0.3")` | HTML email templates with variable substitution (cert details, expiry dates) |
+| Template Alt | Apache FreeMarker | **2.3.33** | `implementation("org.freemarker:freemarker:2.3.33")` | Alternative templating for complex multi-locale email bodies |
+| SMS Gateway | Twilio Java SDK | **10.1.3** | `implementation("com.twilio.sdk:twilio:10.1.3")` | SMS OTP, RA approval alerts, cert expiry SMS reminders |
+| Push Notification | Firebase Admin SDK (FCM) | **9.4.1** | `implementation("com.google.firebase:firebase-admin:9.4.1")` | Mobile push notifications for RA operator mobile app |
+| Async Event Bus | Spring ApplicationEventPublisher | **7.0.6** | Built-in Spring Framework | In-process event dispatch; `@EventListener` + `@Async` for cert lifecycle events |
+| Persistent Queue | Apache Kafka 3.8.0 | **3.8.0** | `implementation("org.springframework.kafka:spring-kafka:3.3.x")` | Durable async notification delivery; `notification-events` topic; replay on failure |
+| Retry | Spring Retry | **2.0.8** | `implementation("org.springframework.retry:spring-retry:2.0.8")` | Automatic retry on transient SMTP/SMS failures with exponential backoff |
+
+### 22B. Notification Event Types (RA Domain)
+
+| Event | Trigger | Channel | Template |
+|---|---|---|---|
+| Certificate Issued | Cert status → ISSUED | Email + Kafka | `cert-issued.html` |
+| Certificate Expiry Warning | 90 / 30 / 7 days before expiry | Email + SMS | `cert-expiry-warning.html` |
+| Certificate Revoked | Revocation request processed | Email | `cert-revoked.html` |
+| Approval Required | CSR submitted, pending RA officer | Email + Push | `approval-request.html` |
+| Renewal Reminder | Auto-scan nightly batch | Email | `renewal-reminder.html` |
+| HSM Key Event | Key generation / destruction | Email + Audit | `hsm-key-event.html` |
+| System Alert | Health check failure | Email + PagerDuty | `system-alert.html` |
+
+### 22C. Configuration Reference (`application.yml`)
+
+```yaml
+spring:
+  mail:
+    host: smtp.company.com
+    port: 587
+    username: ${SMTP_USER}
+    password: ${SMTP_PASS}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.ssl.trust: smtp.company.com
+  thymeleaf:
+    prefix: classpath:/templates/email/
+    suffix: .html
+    mode: HTML
+
+notification:
+  from-address: ra-noreply@company.com
+  expiry-warning-days: [90, 30, 7]
+  retry:
+    max-attempts: 3
+    backoff-ms: 2000
+```
+
+---
+
+## 23. CI/CD PIPELINE TECH STACK
+
+> Full DevSecOps pipeline from code commit to production deployment on Kubernetes. Security scanning embedded at every stage.
+
+### 23A. Source Control & Triggering
+
+| Component | Technology | Version | Purpose / Notes |
+|---|---|---|---|
+| Source Control | GitHub / GitLab | Latest SaaS | Mono-repo with multi-module Gradle; branch strategy: `main`, `release/*`, `feature/*` |
+| CI Engine | GitHub Actions | Latest | Workflow YAML; matrix builds across JDK 21/24; caching of Gradle deps |
+| CI Alt | GitLab CI/CD | 17.x | Self-hosted option; `.gitlab-ci.yml` pipelines; integrated container registry |
+| Webhook Triggers | GitHub Webhooks | — | Push, PR, tag events trigger pipelines |
+
+### 23B. Build & Test Stage
+
+| Component | Technology | Version | Gradle Artifact / Tool | Purpose / Notes |
+|---|---|---|---|---|
+| Build Tool | Gradle | **9.4.0** | `./gradlew build` | Kotlin DSL multi-module build; incremental compilation, build cache |
+| Compiler | Eclipse Temurin | **21.0.3 LTS** | GitHub Actions `setup-java` | Primary JDK; `--release 21` flag enforced |
+| Unit / Integration Tests | JUnit 6.0.3 + Testcontainers 1.20.2 | **6.0.3 / 1.20.2** | `./gradlew test` | Full test suite on every PR; containers for PG, Redis, Kafka |
+| Code Coverage | JaCoCo | **0.8.12** | `id("jacoco")` | Minimum 80% line coverage enforced; coverage report to Sonar |
+| Code Quality | SonarQube / SonarCloud | **10.6** | `id("org.sonarqube") version "5.1.0"` | SAST, code smells, duplication, branch analysis |
+| Bug Detection | SpotBugs | **4.8.6** | `id("com.github.spotbugs") version "6.x"` | Bytecode-level bug detection; FindSecBugs plugin for security checks |
+| Style Enforcement | Checkstyle | **10.18.2** | `id("checkstyle")` | Google Java Style enforced; fail build on violation |
+
+### 23C. Security Scanning Stage
+
+| Component | Technology | Version | Purpose / Notes |
+|---|---|---|---|
+| Dependency Vulnerability | OWASP Dependency-Check | **10.0.4** | `id("org.owasp.dependencycheck")`; NVD feed; fail on CVSS ≥ 7.0 |
+| Container Image Scan | Trivy | **0.56.2** | Scan Docker image for OS + library CVEs; integrated into GitHub Actions step |
+| Secrets Detection | TruffleHog / GitLeaks | **3.82.x / 8.x** | Pre-commit + CI scan; detect AWS keys, PEM, passwords in commits |
+| SAST | Semgrep | **1.x** | Java rules + custom PKI-specific rules; auto PR annotations |
+| License Compliance | FOSSA / Gradle License Report | **3.x** | OSS license compatibility check; fail on GPL contamination |
+| SBOM Generation | Syft | **1.x** | Generate CycloneDX/SPDX SBOM per release artifact |
+
+### 23D. Artifact & Container Registry
+
+| Component | Technology | Version | Purpose / Notes |
+|---|---|---|---|
+| Container Registry | Harbor | **2.11.1** | Private OCI-compliant registry; Trivy integrated scanning; RBAC |
+| Container Build | Docker BuildKit / Buildah | **27.x / 1.37** | Rootless image build; multi-stage Dockerfile; distroless base (`gcr.io/distroless/java21`) |
+| Java Artifact Store | Nexus Repository / GitHub Packages | **3.x** | Internal Maven/Gradle artifact hosting; proxy for Maven Central |
+| Helm Chart Store | Harbor (OCI) / ChartMuseum | **2.11.1** | Helm 3 OCI chart storage; versioned per release |
+
+### 23E. Deployment & GitOps
+
+| Component | Technology | Version | Purpose / Notes |
+|---|---|---|---|
+| GitOps CD | ArgoCD | **2.12.x** | Declarative GitOps; auto-sync from `release/*` branch; rollback support |
+| Helm | Helm | **3.16.x** | Kubernetes packaging; `values-dev.yaml`, `values-prod.yaml` per environment |
+| K8s Cluster | Kubernetes | **1.31** | Target deployment platform; namespace-per-environment |
+| Service Mesh | Istio | **1.23.2** | mTLS, traffic shifting, canary deployments, observability sidecar |
+| Notifications | ArgoCD Notifications | **1.2.x** | Slack/email on deploy success/failure |
+
+### 23F. Pipeline Flow Summary
+
+```
+[Git Push / PR]
+    │
+    ▼
+[GitHub Actions CI]
+    ├── 1. ./gradlew build (compile + test)
+    ├── 2. ./gradlew jacocoTestReport sonar (quality gate)
+    ├── 3. OWASP Dependency-Check (SCA)
+    ├── 4. Semgrep SAST scan
+    ├── 5. Docker Build (distroless/java21 base)
+    ├── 6. Trivy image scan (CVE gate)
+    ├── 7. TruffleHog secrets scan
+    ├── 8. Syft SBOM generation
+    └── 9. Push to Harbor (tag: git-sha + semver)
+         │
+         ▼
+    [ArgoCD GitOps]
+         ├── Auto-sync dev namespace
+         ├── Manual gate → staging / prod
+         └── Helm upgrade with Istio sidecar injection
+```
+
+---
+
+## 24. EXTERNALIZED CONFIG & PROFILES TECH STACK
+
+> Manages environment-specific configuration, secrets injection, and Spring profile activation across local / dev / staging / prod.
+
+### 24A. Core Config Stack
+
+| Component | Technology | Version | Gradle Artifact | Purpose / Notes |
+|---|---|---|---|---|
+| Config Server | Spring Cloud Config Server | **4.2.x** *(2025.0.x BOM)* | `implementation("org.springframework.cloud:spring-cloud-starter-config")` | Centralized config from Git repo; per-profile YAML; encrypted property support |
+| Config Client | Spring Cloud Config Client | **4.2.x** | `implementation("org.springframework.cloud:spring-cloud-config-client")` | Auto-fetch config on startup; `/actuator/refresh` for runtime reload |
+| Secrets Backend | HashiCorp Vault | **1.17.6** | `implementation("org.springframework.vault:spring-vault-core:3.3.3")` | Dynamic DB credentials, PKI secrets engine, HSM PIN; leases auto-renewed |
+| Vault Integration | Spring Cloud Vault | **4.2.x** | `implementation("org.springframework.cloud:spring-cloud-starter-vault-config")` | Bootstrap Vault secrets into `Environment`; AppRole auth method |
+| K8s ConfigMap | Spring Cloud Kubernetes | **3.1.x** | `implementation("org.springframework.cloud:spring-cloud-starter-kubernetes-client-config")` | Reads K8s ConfigMaps + Secrets as Spring properties; watch for changes |
+| Local Dev Secrets | Spring dotenv | **4.0.0** | `implementation("me.paulschwarz:spring-dotenv:4.0.0")` | Load `.env` file in local dev; never committed to Git |
+| Property Encryption | Jasypt Spring Boot | **3.0.5** | `implementation("com.github.ulisesbocchio:jasypt-spring-boot-starter:3.0.5")` | Encrypt sensitive properties in Git config repo (`ENC(...)` prefix) |
+
+### 24B. Spring Profile Strategy
+
+| Profile | Activation | Config Source | Notes |
+|---|---|---|---|
+| `local` | `SPRING_PROFILES_ACTIVE=local` | `.env` + `application-local.yml` | H2 / Docker Compose; no HSM; self-signed certs |
+| `dev` | K8s ConfigMap label | Spring Cloud Config `dev` branch | Real PostgreSQL; software HSM (SoftHSM2); Keycloak dev realm |
+| `staging` | K8s ConfigMap label | Spring Cloud Config `staging` branch | Full HSM; Vault dynamic creds; production-like data |
+| `prod` | K8s ConfigMap label | Vault + Spring Cloud Config `main` branch | Vault PKI engine; Utimaco HSM; strict TLS; no debug logging |
+| `test` | `@ActiveProfiles("test")` in JUnit | `application-test.yml` | Testcontainers; embedded Redis; WireMock for EJBCA |
+
+### 24C. Configuration Hierarchy (Override Order — Lowest to Highest)
+
+```
+application.yml (jar classpath)
+    ↑
+application-{profile}.yml (jar classpath)
+    ↑
+Spring Cloud Config Server (Git repo)
+    ↑
+Kubernetes ConfigMap (env-specific)
+    ↑
+Kubernetes Secret (sensitive keys)
+    ↑
+HashiCorp Vault (dynamic secrets, HSM PINs)
+    ↑
+Environment Variables (container overrides)
+    ↑
+JVM -D flags (emergency overrides)
+```
+
+### 24D. Key Properties Reference
+
+| Property Key | Source | Example Value | Notes |
+|---|---|---|---|
+| `spring.datasource.url` | K8s ConfigMap | `jdbc:postgresql://pg:5432/ra_db` | Per-namespace DNS |
+| `spring.datasource.password` | Vault dynamic | `v-role-xxxx-yyy` | Rotated every 24h; auto-renewed |
+| `spring.security.oauth2.resourceserver.jwt.issuer-uri` | Config Server | `https://keycloak/realms/ra` | Per-profile Keycloak realm |
+| `ra.hsm.pkcs11.library-path` | Vault / K8s Secret | `/opt/utimaco/libcs2.so` | HSM library path; prod only |
+| `ra.hsm.pkcs11.pin` | Vault | `${vault.hsm.pin}` | Dynamic Vault reference |
+| `ra.ca.ejbca.url` | Config Server | `https://ejbca:8443/ejbca` | EJBCA CMP endpoint |
+| `ra.notification.smtp.password` | Vault | `${vault.smtp.pass}` | Rotated quarterly |
+
+---
+
+---
+
+## 25. SPRING BATCH PROCESSING TECH STACK
+
+> Bulk certificate operations — expiry scans, bulk revocation, CRL generation, renewal campaigns, audit log archival.
+
+### 25A. Core Batch Libraries
+
+| Component | Technology | Version | Gradle Artifact | Purpose / Notes |
+|---|---|---|---|---|
+| Batch Framework | Spring Batch | **5.2.1** | `implementation("org.springframework.batch:spring-batch-core:5.2.1")` | Chunk-oriented processing; `ItemReader` / `ItemProcessor` / `ItemWriter`; Spring Boot 4.0 compatible |
+| Batch Auto-Config | Spring Boot Batch Starter | **4.0.3** | `implementation("org.springframework.boot:spring-boot-starter-batch:4.0.3")` | Auto JobRepository wiring; embedded H2 or PostgreSQL schema |
+| Job Scheduler | Quartz Scheduler | **2.5.0** | `implementation("org.springframework.boot:spring-boot-starter-quartz:4.0.3")` | Cron-based job triggers; clustered mode via `QRTZ_*` PostgreSQL tables |
+| Scheduler Alt | JobRunr | **7.3.1** | `implementation("org.jobrunr:jobrunr-spring-boot-3-starter:7.3.1")` | Lightweight alternative; dashboard UI; background job with retries |
+| Batch Job Store | PostgreSQL 16.4 | **16.4** | Via `spring-batch-core` schema | Job execution metadata; `BATCH_JOB_INSTANCE`, `BATCH_STEP_EXECUTION` tables |
+| Batch Metrics | Micrometer | **1.16.x** | `implementation("io.micrometer:micrometer-core:1.16.x")` | `spring.batch.job.*` metrics; step duration, item count, skip count to Prometheus |
+| Parallel Steps | Spring Batch Partitioning | **5.2.1** | Built-in `PartitionStep` | Parallel processing of certificate batches by partition key (date range, org) |
+| Remote Chunking | Spring Integration | **6.4.x** | `implementation("org.springframework.integration:spring-integration-core:6.4.x")` | Distribute chunk processing across worker pods via Kafka |
+
+### 25B. Batch Job Catalogue (RA Domain)
+
+| Job Name | Schedule | Reader | Processor | Writer | Notes |
+|---|---|---|---|---|---|
+| `CertExpiryNotificationJob` | Daily 06:00 | DB — certs expiring in 90/30/7d | Build notification payload | Kafka `notification-events` topic | Chunked 500 items |
+| `CertRenewalReminderJob` | Weekly Sunday 03:00 | DB — auto-renewal eligible | Validate + generate CSR | EJBCA CMP submit | Idempotent step |
+| `CRLGenerationJob` | Every 4 hours | DB — revoked certs | Build CRL structure | EJBCA + CDN upload | `RevocationInfo` list |
+| `AuditLogArchivalJob` | Monthly 01st 02:00 | `audit_events` table (> 1 yr) | Compress + hash chain verify | S3 / MinIO archive | Immutability verified before move |
+| `OrphanCSRCleanupJob` | Nightly 02:30 | DB — CSRs stuck > 30d | Mark EXPIRED | DB update + audit event | Non-destructive status change |
+| `BulkRevocationJob` | On-demand | CSV file or Kafka trigger | Parse + validate serial | EJBCA CMP revoke | Manual trigger via REST API |
+| `CertInventoryReportJob` | Monthly 01st 05:00 | Full cert table scan | Aggregate by CA / profile / org | XLSX / PDF report + Email | Uses Apache POI 5.3.0 |
+
+### 25C. Spring Batch Configuration Snippet (`build.gradle.kts`)
+
+```kotlin
+dependencies {
+    implementation("org.springframework.boot:spring-boot-starter-batch:4.0.3")
+    implementation("org.springframework.boot:spring-boot-starter-quartz:4.0.3")
+    implementation("org.jobrunr:jobrunr-spring-boot-3-starter:7.3.1")
+    implementation("org.springframework.batch:spring-batch-integration:5.2.1")
+    testImplementation("org.springframework.batch:spring-batch-test:5.2.1")
+}
+```
+
+---
+
+## 26. API GATEWAY — DETAILED TECH STACK
+
+> Spring Cloud Gateway sits at the edge of the RA system — routing, rate limiting, auth, circuit breaking, and observability for all inbound protocol traffic (EST, SCEP, CMP, ACME, REST).
+
+### 26A. Core Gateway Stack
+
+| Component | Technology | Version | Gradle Artifact | Purpose / Notes |
+|---|---|---|---|---|
+| API Gateway | Spring Cloud Gateway | **4.2.x** *(2025.0.x BOM)* | `implementation("org.springframework.cloud:spring-cloud-starter-gateway")` | Reactive `WebFlux`-based gateway; route predicates, filters, TLS termination |
+| Rate Limiting | Spring Cloud Gateway + Redis | **4.2.x + Redis 7.4.0** | `implementation("org.springframework.boot:spring-boot-starter-data-redis-reactive")` | `RedisRateLimiter` filter; token bucket per client IP / API key; Lettuce reactive |
+| Circuit Breaker | Resilience4j Spring Cloud | **2.2.0** | `implementation("org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j")` | Gateway `CircuitBreaker` filter; fallback response on CA backend unavailability |
+| Auth at Gateway | Spring Security OAuth2 Resource Server | **7.0.x** | `implementation("org.springframework.security:spring-security-oauth2-resource-server")` | JWT validation at gateway edge; token introspection optional |
+| mTLS Termination | Istio Ingress Gateway | **1.23.2** | Istio sidecar | mTLS client cert auth before traffic reaches Spring Gateway |
+| Service Discovery | Spring Cloud Kubernetes | **3.1.x** | `implementation("org.springframework.cloud:spring-cloud-starter-kubernetes-client")` | Discover RA microservice pods via K8s DNS |
+| Tracing | Micrometer Tracing + OTLP | **1.16.x + 1.60.1** | `implementation("io.micrometer:micrometer-tracing-bridge-otel")` | Trace-ID propagated through gateway to downstream; exported to Tempo |
+
+### 26B. Gateway Route Configuration Reference
+
+```yaml
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: est-route
+          uri: lb://ra-est-service
+          predicates:
+            - Path=/.well-known/est/**
+          filters:
+            - name: CircuitBreaker
+              args: { name: estCB, fallbackUri: forward:/fallback/est }
+            - name: RequestRateLimiter
+              args: { redis-rate-limiter.replenishRate: 50, redis-rate-limiter.burstCapacity: 100 }
+            - name: Retry
+              args: { retries: 3, statuses: SERVICE_UNAVAILABLE }
+
+        - id: acme-route
+          uri: lb://ra-acme-service
+          predicates:
+            - Path=/acme/**
+          filters:
+            - name: RequestRateLimiter
+              args: { redis-rate-limiter.replenishRate: 100, redis-rate-limiter.burstCapacity: 200 }
+
+        - id: rest-admin-route
+          uri: lb://ra-admin-service
+          predicates:
+            - Path=/api/v1/**
+          filters:
+            - TokenRelay=
+            - name: CircuitBreaker
+              args: { name: adminCB, fallbackUri: forward:/fallback/admin }
+```
+
+### 26C. Gateway Security Headers Filter
+
+| Header | Value | Purpose |
+|---|---|---|
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | Force HTTPS |
+| `X-Content-Type-Options` | `nosniff` | Prevent MIME sniffing |
+| `X-Frame-Options` | `DENY` | Clickjacking protection |
+| `Content-Security-Policy` | `default-src 'self'` | XSS protection |
+| `X-Request-ID` | Generated UUID | Correlation ID injection |
+| `Cache-Control` | `no-store` | No caching of cert data |
+
+---
+
+## 27. MULTI-MODULE GRADLE STRUCTURE TECH STACK
+
+> Gradle multi-module project layout for the RA system; promotes separation of concerns, independent builds, and shared convention plugins.
+
+### 27A. Gradle Multi-Module Tools
+
+| Component | Technology | Version | Purpose / Notes |
+|---|---|---|---|
+| Build System | Gradle | **9.4.0** | Multi-project build; `settings.gradle.kts` declares all subprojects |
+| DSL | Kotlin DSL | **Gradle 9.4.0 built-in** | `build.gradle.kts` in each module; type-safe, IDE auto-complete |
+| Version Catalog | `libs.versions.toml` | **Gradle 9.4.0 built-in** | Centralized dependency versions; `libs.spring.boot.starter.web` aliases |
+| Convention Plugins | `buildSrc` / included builds | **Gradle 9.4.0** | Shared build logic extracted into `*.convention.gradle.kts` plugins |
+| Dependency Locking | Gradle Dependency Locking | **Gradle 9.4.0 built-in** | `./gradlew dependencies --write-locks`; reproducible dependency resolution |
+| Build Cache | Gradle Build Cache | **Gradle 9.4.0 built-in** | Local + remote cache; skip up-to-date tasks; 60-80% faster CI rebuilds |
+| Build Scan | Gradle Develocity | **3.19** | `id("com.gradle.develocity") version "3.19"`; performance analytics, test insights |
+| Java Platform BOM | Gradle Java Platform | **Gradle 9.4.0 built-in** | `ra-bom` module publishes platform constraints for all submodules |
+
+### 27B. Recommended Module Structure
+
+```
+pqc-ra/                                  ← root project
+├── settings.gradle.kts                  ← include(":ra-api", ":ra-core", ...)
+├── gradle/
+│   ├── libs.versions.toml               ← version catalog
+│   └── wrapper/gradle-wrapper.properties
+├── buildSrc/                            ← convention plugins
+│   └── src/main/kotlin/
+│       ├── ra.java-conventions.gradle.kts
+│       ├── ra.spring-conventions.gradle.kts
+│       └── ra.security-conventions.gradle.kts
+│
+├── ra-bom/                              ← Java Platform BOM module
+├── ra-api/                              ← REST + Protocol controllers (EST/SCEP/CMP/ACME)
+├── ra-core/                             ← Domain logic, FSM, validation
+├── ra-crypto/                           ← BouncyCastle, HSM, PQC operations
+├── ra-persistence/                      ← JPA entities, repositories, Flyway
+├── ra-notification/                     ← Email, SMS, Kafka notification service
+├── ra-batch/                            ← Spring Batch jobs (expiry scan, CRL gen)
+├── ra-gateway/                          ← Spring Cloud Gateway module
+├── ra-security/                         ← Keycloak, Vault, LDAP, WebAuthn
+├── ra-observability/                    ← Micrometer, OpenTelemetry config
+├── ra-client/                           ← Generated client SDK (OpenAPI)
+└── ra-integration-test/                 ← Cross-module integration tests (Testcontainers)
+```
+
+### 27C. `settings.gradle.kts` Reference
+
+```kotlin
+rootProject.name = "pqc-ra"
+
+plugins {
+    id("com.gradle.develocity") version "3.19"
+}
+
+develocity {
+    buildScan {
+        termsOfUseUrl = "https://gradle.com/terms-of-service"
+        termsOfUseAgree = "yes"
+    }
+}
+
+include(
+    ":ra-bom",
+    ":ra-api",
+    ":ra-core",
+    ":ra-crypto",
+    ":ra-persistence",
+    ":ra-notification",
+    ":ra-batch",
+    ":ra-gateway",
+    ":ra-security",
+    ":ra-observability",
+    ":ra-client",
+    ":ra-integration-test"
+)
+```
+
+### 27D. `libs.versions.toml` Reference (Version Catalog)
+
+```toml
+[versions]
+spring-boot            = "4.0.3"
+spring-framework       = "7.0.6"
+spring-cloud           = "2025.0.x"
+bouncy-castle          = "1.78.1"
+postgresql             = "42.7.4"
+hikari                 = "5.1.0"
+flyway                 = "10.18.0"
+junit6                 = "6.0.3"
+mockito                = "5.23.0"
+testcontainers         = "1.20.2"
+resilience4j           = "2.2.0"
+
+[libraries]
+spring-boot-starter-web      = { module = "org.springframework.boot:spring-boot-starter-web",      version.ref = "spring-boot" }
+spring-boot-starter-security = { module = "org.springframework.boot:spring-boot-starter-security", version.ref = "spring-boot" }
+bouncy-castle-fips           = { module = "org.bouncycastle:bc-fips",                             version.ref = "bouncy-castle" }
+postgresql-driver            = { module = "org.postgresql:postgresql",                             version.ref = "postgresql" }
+hikaricp                     = { module = "com.zaxxer:HikariCP",                                   version.ref = "hikari" }
+junit-jupiter                = { module = "org.junit.jupiter:junit-jupiter",                       version.ref = "junit6" }
+
+[plugins]
+spring-boot              = { id = "org.springframework.boot",        version.ref = "spring-boot" }
+spring-dependency-mgmt   = { id = "io.spring.dependency-management", version = "1.1.7" }
+asciidoctor              = { id = "org.asciidoctor.jvm.convert",     version = "4.0.3" }
+owasp-depcheck           = { id = "org.owasp.dependencycheck",       version = "10.0.4" }
+spotbugs                 = { id = "com.github.spotbugs",             version = "6.x" }
+```
+
+---
+
+---
+
+## 28. FRONTEND / OPERATOR PORTAL TECH STACK
+
+> Web-based RA Operator Portal for certificate request management, approval workflows, revocation, search, and reporting.
+
+### 28A. Frontend Framework & Build
+
+| Component | Technology | Version | Purpose / Notes |
+|---|---|---|---|
+| UI Framework | React | **18.3.1** | SPA for RA Operator portal; component-based; hooks-based state management |
+| Language | TypeScript | **5.5.x** | Type-safe frontend; strict null checks; interfaces for PKI domain models |
+| Build Tool | Vite | **5.4.x** | Fast HMR dev server; Rollup-based prod build; Spring Boot `static/` output |
+| UI Component Library | Material UI (MUI) | **5.16.x** | Pre-built components: DataGrid for cert list, Dialogs for approval flow |
+| Routing | React Router | **6.28.x** | SPA route management; protected routes with OAuth2 token guard |
+| State Management | Zustand | **4.5.x** | Lightweight global state for user session, notification count |
+| HTTP Client | Axios | **1.7.x** | REST API calls to RA backend; interceptors for JWT attach + 401 refresh |
+| Form Handling | React Hook Form + Zod | **7.53.x + 3.23.x** | CSR submission form, revocation reason form; Zod schema validation |
+| Table / Grid | AG Grid Community | **32.x** | High-performance cert inventory grid; server-side pagination + filtering |
+| Charts / Metrics | Recharts | **2.13.x** | Dashboard: cert issuance trend, expiry countdown, CA utilization charts |
+| Date Handling | date-fns | **3.6.x** | Certificate validity date display, expiry countdown calculation |
+
+### 28B. Frontend Security
+
+| Component | Technology | Version | Purpose / Notes |
+|---|---|---|---|
+| Auth (OIDC/PKCE) | oidc-client-ts | **3.1.x** | PKCE flow with Keycloak; silent token refresh; session management |
+| React OIDC Wrapper | react-oidc-context | **3.2.x** | `AuthProvider`, `useAuth()` hook for protected component rendering |
+| CSP | Helmet.js (via Spring Security headers) | **7.x** | Content Security Policy headers set at Spring Gateway; no inline scripts |
+| CSRF | Spring Security CSRF (Double Submit Cookie) | **7.0.x** | CSRF token injected via `XSRF-TOKEN` cookie; read by Axios interceptor |
+| Secure Storage | sessionStorage only | — | Tokens stored in memory / sessionStorage; never localStorage |
+
+### 28C. Server-Side Rendering Option (Thymeleaf)
+
+| Component | Technology | Version | Gradle Artifact | Purpose / Notes |
+|---|---|---|---|---|
+| Template Engine | Thymeleaf | **3.1.3** | `implementation("org.springframework.boot:spring-boot-starter-thymeleaf:4.0.3")` | Server-rendered fallback for low-JS environments; email templates |
+| Security Dialect | Thymeleaf Spring Security | **3.1.2** | `implementation("org.thymeleaf.extras:thymeleaf-extras-springsecurity6:3.1.2")` | `sec:authorize` role-based UI element hiding |
+| Layout Dialect | Thymeleaf Layout Dialect | **3.4.0** | `implementation("nz.net.ultraq.thymeleaf:thymeleaf-layout-dialect:3.4.0")` | Master page layout for admin portal templates |
+
+### 28D. Accessibility & Quality
+
+| Component | Technology | Version | Purpose / Notes |
+|---|---|---|---|
+| Accessibility | axe-core / jest-axe | **4.10.x / 9.0.x** | WCAG 2.1 AA compliance tests in CI |
+| Unit Tests | Jest + React Testing Library | **29.7.x / 16.x** | Component unit tests; mock API responses |
+| E2E Tests | Playwright | **1.48.x** | Full portal E2E: login → submit CSR → approve → download cert |
+| Linting | ESLint + Prettier | **9.x / 3.x** | TypeScript + React rules; enforced in CI |
+| Bundle Analysis | rollup-plugin-visualizer | **5.12.x** | Bundle size analysis; ensure < 500 KB gzip |
+
+---
+
+## 29. DISASTER RECOVERY & BACKUP STRATEGY TECH STACK
+
+> Ensures business continuity for the RA system — RPO ≤ 4h, RTO ≤ 2h target across all critical components.
+
+### 29A. Database Backup (PostgreSQL)
+
+| Component | Technology | Version | Purpose / Notes |
+|---|---|---|---|
+| Continuous WAL Archival | pgBackRest | **2.52** | Continuous WAL archiving to S3/MinIO; point-in-time recovery (PITR); delta restore |
+| Logical Backup | `pg_dump` / `pg_dumpall` | **16.4** | Daily logical dumps; per-schema; compressed `.dump` files |
+| Streaming Replication | PostgreSQL Streaming Replication | **16.4 built-in** | Hot standby replica in secondary AZ; automatic failover via Patroni |
+| HA Cluster Manager | Patroni | **3.3.x** | PostgreSQL HA with etcd; automatic leader election; `pg_promote` on failover |
+| Connection Pool DR | PgBouncer | **1.23.x** | Transparent reconnect to new primary after Patroni failover |
+
+### 29B. Kubernetes & Infrastructure Backup
+
+| Component | Technology | Version | Purpose / Notes |
+|---|---|---|---|
+| K8s Cluster Backup | Velero | **1.14.x** | Backup K8s resources (Deployments, Secrets, ConfigMaps, PVCs); schedule: every 6h |
+| Storage Backend | MinIO | **RELEASE.2024-09** | S3-compatible object storage; Velero + pgBackRest target; multi-site replication |
+| Helm Release Backup | ArgoCD GitOps | **2.12.x** | All K8s state in Git; cluster rebuild from repo in < 30 min |
+| Container Image DR | Harbor Replication | **2.11.1** | Cross-region image replication; no re-pull from internet during DR |
+| Secrets DR | Vault DR Replication | **1.17.6** | Vault Enterprise DR replica; promote secondary on primary failure |
+
+### 29C. Cache & Message Queue DR
+
+| Component | Technology | Version | DR Strategy | Notes |
+|---|---|---|---|---|
+| Redis HA | Redis Sentinel | **7.4.0** | 3-node Sentinel; automatic failover < 30s; `min-slaves-to-write 1` | Session + rate limiter data |
+| Redis Persistence | Redis AOF + RDB | **7.4.0** | AOF `everysec` + RDB snapshot every 15 min | Recovery point ≤ 1s for sessions |
+| Kafka DR | Kafka MirrorMaker 2 | **3.8.0** | Active-passive cross-DC topic replication; consumer group offset sync | `notification-events`, `cert-events` |
+| immudb DR | immudb Replication | **1.9.5** | Follower replica; tamper-evident log replicated in near-real-time | Audit log immutability preserved on replica |
+
+### 29D. RPO / RTO Targets
+
+| Component | RPO Target | RTO Target | DR Method |
+|---|---|---|---|
+| PostgreSQL (cert data) | ≤ 15 min | ≤ 30 min | Patroni auto-failover + WAL streaming |
+| PostgreSQL (full restore) | ≤ 4 h | ≤ 2 h | pgBackRest PITR from S3 |
+| Redis sessions | ≤ 1 s | ≤ 30 s | Sentinel auto-failover |
+| Kafka topics | ≤ 5 min | ≤ 10 min | MirrorMaker 2 replication |
+| K8s cluster | N/A (stateless) | ≤ 30 min | ArgoCD GitOps rebuild |
+| immudb audit log | ≤ 1 min | ≤ 15 min | Follower replica promotion |
+| Vault secrets | ≤ 0 (sync) | ≤ 5 min | Vault DR replication |
+| Container images | N/A | ≤ 10 min | Harbor cross-region replication |
+
+---
+
+## 30. gRPC INTERNAL COMMUNICATIONS TECH STACK
+
+> High-performance, type-safe internal service-to-service communication within the RA multi-module system using gRPC + Protobuf over mTLS.
+
+### 30A. Core gRPC Stack
+
+| Component | Technology | Version | Gradle Artifact | Purpose / Notes |
+|---|---|---|---|---|
+| gRPC Runtime | gRPC Java | **1.68.1** | `implementation("io.grpc:grpc-netty-shaded:1.68.1")` | Core gRPC runtime with shaded Netty; HTTP/2 multiplexed transport |
+| Protobuf Runtime | Protocol Buffers (proto3) | **4.28.3** | `implementation("com.google.protobuf:protobuf-java:4.28.3")` | Schema-first IDL; `CertificateRequest.proto`, `RevocationRequest.proto` |
+| Spring Boot Integration | grpc-spring-boot-starter (LogNet) | **3.1.0** | `implementation("net.devh:grpc-spring-boot-starter:3.1.0")` | `@GrpcService`, `@GrpcClient` annotations; Spring Boot 4.0 compatible |
+| Code Generation | protoc + gRPC Java plugin | **4.28.3 / 1.68.1** | `id("com.google.protobuf") version "0.9.4"` (Gradle plugin) | Auto-generates stub classes from `.proto` files during build |
+| Kotlin Coroutines gRPC | grpc-kotlin | **1.4.1** | `implementation("io.grpc:grpc-kotlin-stub:1.4.1")` | Coroutine-based gRPC stubs for reactive patterns |
+| gRPC Health Check | grpc-health-checking | **1.68.1** | `implementation("io.grpc:grpc-services:1.68.1")` | Standard `grpc.health.v1.Health` service; K8s liveness probe compatible |
+| gRPC Reflection | gRPC Server Reflection | **1.68.1** | `implementation("io.grpc:grpc-services:1.68.1")` | Runtime service discovery; `grpcurl` introspection in dev |
+| Load Balancing | gRPC Client-side LB | **1.68.1 built-in** | `round_robin` policy | K8s pod-level LB; bypasses kube-proxy for L7 awareness |
+
+### 30B. gRPC Security
+
+| Component | Technology | Version | Purpose / Notes |
+|---|---|---|---|
+| Channel Security | mTLS (TLS 1.3) | TLS 1.3 | All gRPC channels use mutual TLS; certs from Vault PKI engine |
+| Service Mesh mTLS | Istio | **1.23.2** | Automatic mTLS injection via Envoy sidecar; `PeerAuthentication` STRICT mode |
+| Auth Metadata | JWT Bearer (gRPC metadata) | Spring Security 7.0.x | `Authorization: Bearer <JWT>` in gRPC call metadata; interceptor validates |
+| gRPC Auth Interceptor | Spring Security gRPC | Built-in LogNet starter | `@PreAuthorize` on `@GrpcService` methods; role-based access |
+
+### 30C. Internal gRPC Services (RA Domain)
+
+| Service | Proto File | Methods | Consumer → Provider |
+|---|---|---|---|
+| Certificate Issuer | `certificate_service.proto` | `IssueCertificate`, `GetCertStatus` | `ra-api` → `ra-core` |
+| Crypto Operations | `crypto_service.proto` | `GenerateKeyPair`, `SignCSR`, `WrapKey` | `ra-core` → `ra-crypto` (HSM) |
+| Notification Dispatcher | `notification_service.proto` | `SendNotification`, `GetDeliveryStatus` | `ra-core` → `ra-notification` |
+| Audit Logger | `audit_service.proto` | `RecordEvent`, `QueryEvents` | All modules → `ra-observability` |
+| Batch Job Trigger | `batch_service.proto` | `TriggerJob`, `GetJobStatus` | REST API → `ra-batch` |
+
+### 30D. Gradle Protobuf Plugin Configuration
+
+```kotlin
+plugins {
+    id("com.google.protobuf") version "0.9.4"
+}
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:4.28.3"
+    }
+    plugins {
+        create("grpc") {
+            artifact = "io.grpc:protoc-gen-grpc-java:1.68.1"
+        }
+        create("grpckt") {
+            artifact = "io.grpc:protoc-gen-grpc-kotlin:1.4.1:jdk8@jar"
+        }
+    }
+    generateProtoTasks {
+        all().forEach {
+            it.plugins {
+                create("grpc")
+                create("grpckt")
+            }
+        }
+    }
+}
+```
+
+---
+
+## 31. OAuth2 / OIDC DEEP-DIVE TECH STACK
+
+> Complete identity, authentication, and authorization stack for the RA system — operators, automated services, HSM access, and external CA integrations.
+
+### 31A. Core OAuth2 / OIDC Components
+
+| Component | Technology | Version | Gradle Artifact | Purpose / Notes |
+|---|---|---|---|---|
+| Identity Provider (IdP) | Keycloak | **25.0.6** | Deployed separately (K8s StatefulSet) | RA realm; OIDC / SAML 2.0; LDAP federation; MFA enforcement |
+| Resource Server (JWT) | Spring Security OAuth2 Resource Server | **7.0.x** | `implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server:4.0.3")` | JWT validation at API layer; `BearerTokenAuthenticationFilter` |
+| OAuth2 Client | Spring Security OAuth2 Client | **7.0.x** | `implementation("org.springframework.boot:spring-boot-starter-oauth2-client:4.0.3")` | PKCE auth-code flow for Operator Portal; token refresh |
+| Authorization Server | Spring Authorization Server | **1.4.x** | `implementation("org.springframework.security:spring-security-oauth2-authorization-server:1.4.x")` | Optional custom AS for service-to-service client credentials flow |
+| JWT Library | Nimbus JOSE + JWT | **9.48** | `implementation("com.nimbusds:nimbus-jose-jwt:9.48")` | Low-level JWT sign/verify; JWK Set parsing; used internally by Spring Security |
+| Token Introspection | RFC 7662 Introspection | Spring Security built-in | `security.oauth2.resourceserver.opaque-token.introspection-uri` | Opaque token validation option (Keycloak introspection endpoint) |
+| Device Auth Flow | RFC 8628 Device Flow | Keycloak 25.0.6 | Keycloak config | CLI tool + HSM appliance authentication without browser |
+
+### 31B. Token Strategy
+
+| Token Type | Format | Lifetime | Storage | Usage |
+|---|---|---|---|---|
+| Access Token | JWT (RS256 / ES256) | 15 min | Memory only (React state) | API calls: `Authorization: Bearer <token>` |
+| Refresh Token | Opaque | 8 h | `httpOnly` Secure cookie | Silent refresh via PKCE flow |
+| ID Token | JWT (OIDC) | 15 min | Memory only | User info: name, email, roles display |
+| Service Token | JWT (Client Credentials) | 1 h | Spring Security context | Service-to-service gRPC + REST calls |
+| mTLS Client Cert | X.509 | 1 year | TLS handshake | HSM + CA backend auth (CMP over HTTPS) |
+
+### 31C. Spring Security Configuration Reference
+
+```kotlin
+@Configuration
+@EnableWebSecurity
+class SecurityConfig {
+
+    @Bean
+    fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
+        http {
+            authorizeHttpRequests {
+                authorize("/.well-known/est/**", hasRole("EST_CLIENT"))
+                authorize("/acme/**", hasRole("ACME_CLIENT"))
+                authorize("/api/v1/admin/**", hasRole("RA_ADMIN"))
+                authorize("/api/v1/officer/**", hasAnyRole("RA_OFFICER", "RA_ADMIN"))
+                authorize("/actuator/health", permitAll)
+                authorize(anyRequest, authenticated)
+            }
+            oauth2ResourceServer {
+                jwt {
+                    jwkSetUri = "https://keycloak/realms/ra/protocol/openid-connect/certs"
+                    jwtAuthenticationConverter = raJwtAuthenticationConverter()
+                }
+            }
+            sessionManagement { sessionCreationPolicy = STATELESS }
+            csrf { disable() }  // stateless JWT; CSRF not applicable
+            headers {
+                httpStrictTransportSecurity { includeSubDomains = true; maxAgeInSeconds = 31536000 }
+                contentSecurityPolicy { policyDirectives = "default-src 'self'" }
+                frameOptions { deny() }
+            }
+        }
+        return http.build()
+    }
+}
+```
+
+### 31D. Keycloak Realm Configuration (RA Realm)
+
+| Config Item | Value | Notes |
+|---|---|---|
+| Realm Name | `ra-realm` | Isolated realm for RA system |
+| Client: `ra-portal` | Public, PKCE, `http://portal/callback` | Operator Portal SPA client |
+| Client: `ra-backend` | Confidential, Client Credentials | Service-to-service; roles mapped |
+| Client: `ra-est-client` | mTLS Client Auth | EST protocol client authentication |
+| Password Policy | Min 12 chars, MFA mandatory | Enforced for all operator accounts |
+| Identity Federation | Active Directory via LDAP | `spring.ldap.urls=ldap://ad:389` |
+| PKCE | `S256` required | All public clients; `code_challenge_method=S256` |
+| Access Token Lifetime | 900s (15 min) | Short-lived; `accessTokenLifespan=900` |
+| Refresh Token Lifetime | 28800s (8 h) | Session max; revoked on logout |
+| Post-Quantum Ready | JWS: ES256 (ECDSA) | Migrate to ML-DSA when Keycloak supports JEP 497 |
+
+### 31E. Scope & Role Matrix
+
+| Role | Scope | Access Level | Assigned To |
+|---|---|---|---|
+| `RA_ADMIN` | `ra:admin` | Full system access; config, user mgmt, all jobs | PKI administrators |
+| `RA_OFFICER` | `ra:officer` | Approve/reject CSRs; revoke certs; search | RA officers |
+| `RA_VIEWER` | `ra:read` | Read-only cert search and status | Auditors, support staff |
+| `EST_CLIENT` | `ra:est` | EST protocol endpoints only | EST client systems |
+| `ACME_CLIENT` | `ra:acme` | ACME protocol endpoints only | DevOps automation |
+| `BATCH_SERVICE` | `ra:batch` | Trigger batch jobs; read metrics | Internal scheduler |
+| `AUDIT_SERVICE` | `ra:audit` | Write audit events; read immutable log | Internal services |
+
+---
+
 *PKI Architecture Team | Confidential — Internal Use Only | Next Review: 2026-09-14*
