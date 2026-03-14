@@ -266,12 +266,13 @@
 
 | Component | Technology | Version (Latest) | Purpose |
 |---|---|---|---|
-| Test Starter | `spring-boot-starter-test` | **4.0.3** | Master test BOM — includes JUnit 5, Mockito, AssertJ, Hamcrest, JSONAssert, JsonPath, Awaitility |
-| Test Runner | JUnit 5 (Jupiter Engine) | **5.11.2** | `@Test`, `@ParameterizedTest`, `@Nested`, `@ExtendWith` — primary test runner for all RA tests |
-| JUnit Platform | JUnit Platform Launcher | **1.11.2** | Test discovery and execution engine; Maven Surefire + Gradle Test integration |
-| Mocking Framework | Mockito Core | **5.14.1** | `@Mock`, `@InjectMocks`, `@Captor` — mock HSM service, CA connector, LDAP provider |
+| Test Starter | `spring-boot-starter-test` | **4.0.3** | Master test BOM — includes JUnit 6, Mockito, AssertJ, Hamcrest, JSONAssert, JsonPath, Awaitility |
+| Test Runner | JUnit 6 (Jupiter Engine) | **6.0.3** *(Feb 2026)* | `@Test`, `@ParameterizedTest`, `@Nested`, `@ExtendWith` — requires Java 17+; current generation |
+| Test Runner (LTS) | JUnit 5 (Jupiter Engine) | **5.13.4** | Latest JUnit 5.x line; use if SB 4.0 BOM hasn't adopted JUnit 6 yet |
+| JUnit Platform | JUnit Platform Launcher | **1.13.4** | Test discovery and execution engine; Maven Surefire + Gradle 9 Test integration |
+| Mocking Framework | Mockito Core | **5.23.0** *(Mar 2026)* | `@Mock`, `@InjectMocks`, `@Captor` — mock HSM service, CA connector, LDAP provider |
 | Spring Mock Beans | `@MockBean` / `@SpyBean` | **4.0.3** | Replace Spring beans with Mockito mocks inside `ApplicationContext` |
-| Assertion Library | AssertJ | **3.26.3** | Fluent assertions: `assertThat(cert).isNotNull().hasFieldOrProperty("serialNumber")` |
+| Assertion Library | AssertJ | **3.27.7** *(Jan 2026)* | Fluent assertions: `assertThat(cert).isNotNull().hasFieldOrProperty("serialNumber")`; CVE-2026-24400 patched |
 | Assertion Alt | Hamcrest | **2.2** | Matcher-based assertions; used with MockMvc `andExpect(jsonPath(...))` |
 | JSON Assertion | JSONAssert | **1.5.3** | Assert JSON REST response bodies: `strict` vs `lenient` mode |
 | JSON Path | JsonPath (Jayway) | **2.9.0** | `$.certificates[0].subject` — navigate JSON responses in test assertions |
@@ -551,6 +552,303 @@ class CertificateRequestServiceIT {
 
 ---
 
+## 15. JUNIT, MOCKITO & TEST CASE WRITING LIBRARIES
+
+> This section covers every library needed to **write** unit, integration, and security test cases
+> for the RA system — from test runners and mocking to assertions and parameterization.
+
+---
+
+### 15A. TEST RUNNERS & FRAMEWORK
+
+| Component | Technology | Version (Latest) | Maven / Gradle Artifact | Purpose |
+|---|---|---|---|---|
+| JUnit 6 Engine | JUnit Jupiter | **6.0.3** *(Feb 2026)* | `org.junit.jupiter:junit-jupiter:6.0.3` | Current generation test runner; Java 17+ required; `@Test`, `@Nested`, `@DisplayName` |
+| JUnit 5 Engine | JUnit Jupiter (5.x LTS) | **5.13.4** | `org.junit.jupiter:junit-jupiter:5.13.4` | LTS fallback if Spring Boot BOM still on 5.x |
+| JUnit Platform | JUnit Platform Launcher | **1.13.4** | `org.junit.platform:junit-platform-launcher` | Test discovery, filtering, engine execution |
+| JUnit Platform Suite | JUnit Platform Suite | **1.13.4** | `org.junit.platform:junit-platform-suite` | `@Suite`, `@SelectPackages` — aggregate test suites |
+| Maven Surefire | Maven Surefire Plugin | **3.5.2** | `org.apache.maven.plugins:maven-surefire-plugin` | Run JUnit 6 tests in Maven `test` phase |
+| Gradle Test | Gradle Test Task | **9.4.0** | Built-in | Run tests with `./gradlew test` — JUnit Platform support |
+| JUnit Vintage | JUnit Vintage Engine | **5.13.4** | `org.junit.vintage:junit-vintage-engine` | Run legacy JUnit 4 tests in JUnit 5/6 platform |
+
+---
+
+### 15B. MOCKITO — MOCKING FRAMEWORK
+
+| Component | Technology | Version (Latest) | Maven Artifact | Purpose |
+|---|---|---|---|---|
+| Mockito Core | Mockito | **5.23.0** *(Mar 2026)* | `org.mockito:mockito-core:5.23.0` | Core mocking framework; `mock()`, `when()`, `verify()`, `spy()` |
+| Mockito JUnit 5 | Mockito JUnit Jupiter Extension | **5.23.0** | `org.mockito:mockito-junit-jupiter:5.23.0` | `@ExtendWith(MockitoExtension.class)` — auto inject `@Mock`, `@InjectMocks` |
+| Mockito Inline | Mockito Inline (default in 5.x) | **5.23.0** | Built into `mockito-core` 5.x | Mock `final` classes, `static` methods, constructors; default mock maker |
+| Spring MockBean | `@MockBean` / `@SpyBean` | **4.0.3** *(SB 4.0)* | `spring-boot-test:4.0.3` | Replace Spring beans in `ApplicationContext` with Mockito mocks |
+| Mockito Kotlin | mockito-kotlin | **6.2.3** | `org.mockito.kotlin:mockito-kotlin:6.2.3` | Kotlin-friendly Mockito DSL (if Kotlin used in RA tests) |
+
+**Key Mockito Annotations for RA Tests:**
+
+| Annotation | Scope | RA Usage Example |
+|---|---|---|
+| `@Mock` | Unit test | Mock `HsmService`, `CaConnector`, `LdapIdentityProvider` |
+| `@InjectMocks` | Unit test | Inject mocks into `CertificateRequestService`, `ValidationService` |
+| `@Spy` | Unit test | Partial mock of `CsrValidator` — spy on real method, stub one |
+| `@Captor` | Unit test | Capture `CertificateRequest` passed to `auditService.log()` |
+| `@MockBean` | Spring slice test | Replace real `EjbcaCaConnector` bean in `@WebMvcTest` context |
+| `@SpyBean` | Spring slice test | Spy on real `WorkflowService` in `@SpringBootTest` |
+
+---
+
+### 15C. ASSERTION LIBRARIES
+
+| Component | Technology | Version (Latest) | Maven Artifact | Purpose |
+|---|---|---|---|---|
+| AssertJ Core | AssertJ | **3.27.7** *(Jan 2026)* | `org.assertj:assertj-core:3.27.7` | Fluent, type-safe assertions; CVE-2026-24400 XXE fix included |
+| AssertJ DB | AssertJ-DB | **3.0.0** | `org.assertj:assertj-db:3.0.0` | Assert database state — verify rows in `certificate_requests` table |
+| Hamcrest | Hamcrest | **2.2** | `org.hamcrest:hamcrest:2.2` | Matcher-based assertions; used in MockMvc `andExpect(jsonPath(..., is(...)))` |
+| JSONAssert | JSONAssert | **1.5.3** | `org.skyscreamer:jsonassert:1.5.3` | Compare JSON responses; `strict` mode for REST API contract validation |
+| JsonPath | Jayway JsonPath | **2.9.0** | `com.jayway.jsonpath:json-path:2.9.0` | Extract values from JSON response: `$.request.status`, `$.certificates[0].serial` |
+| Truth | Google Truth | **1.4.4** | `com.google.truth:truth:1.4.4` | Alternative fluent assertion library from Google |
+
+**Common AssertJ patterns for PKI/RA:**
+```java
+// Certificate assertions
+assertThat(issuedCert)
+    .isNotNull()
+    .extracting(X509Certificate::getSubjectX500Principal)
+    .hasToString("CN=device-001, O=MyOrg");
+
+// Request workflow state assertions
+assertThat(request.getStatus()).isEqualTo(RequestStatus.ISSUED);
+assertThat(request.getCertificateSerialNumber()).isNotBlank();
+
+// Exception assertions (invalid CSR)
+assertThatThrownBy(() -> csrValidator.validate(invalidCsr))
+    .isInstanceOf(CsrValidationException.class)
+    .hasMessageContaining("Key size below minimum");
+
+// DB assertion (AssertJ-DB)
+assertThat(dbTable("certificate_requests"))
+    .row().value("status").isEqualTo("ISSUED")
+    .value("profile_id").isEqualTo("TLS_SERVER");
+```
+
+---
+
+### 15D. PARAMETERIZED & DATA-DRIVEN TESTING
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| `@ParameterizedTest` | JUnit 6 / JUnit 5 | **6.0.3 / 5.13.4** | Run same test with multiple inputs — test CSR with different key sizes, algorithms |
+| `@ValueSource` | JUnit Jupiter | Built-in | `@ValueSource(strings = {"RSA", "ECDSA", "ML-KEM"})` |
+| `@CsvSource` | JUnit Jupiter | Built-in | Inline CSV test data — profile name, key algo, expected validity days |
+| `@MethodSource` | JUnit Jupiter | Built-in | Stream of `Arguments` from factory method — complex CSR objects |
+| `@EnumSource` | JUnit Jupiter | Built-in | Iterate over `CertificateProfile` enum values in tests |
+| `@ArgumentsSource` | JUnit Jupiter | Built-in | Custom `ArgumentsProvider` for generating test X.509 certificates |
+| `@CsvFileSource` | JUnit Jupiter | Built-in | Load test data from `src/test/resources/test-csr-data.csv` |
+
+---
+
+### 15E. TEST LIFECYCLE & ORGANIZATION ANNOTATIONS
+
+| Annotation | Framework | Purpose |
+|---|---|---|
+| `@Test` | JUnit 6 / 5 | Mark method as a test case |
+| `@Nested` | JUnit 6 / 5 | Organize related tests in inner classes — `class WhenCsrIsInvalid {}` |
+| `@DisplayName` | JUnit 6 / 5 | Human-readable test names in reports |
+| `@BeforeEach` / `@AfterEach` | JUnit 6 / 5 | Set up / tear down per test — initialize BC crypto provider |
+| `@BeforeAll` / `@AfterAll` | JUnit 6 / 5 | One-time class setup — start Testcontainers, generate test CA |
+| `@Tag` | JUnit 6 / 5 | `@Tag("pki")`, `@Tag("hsm")` — run tagged test subsets in CI |
+| `@Disabled` | JUnit 6 / 5 | Skip flaky HSM hardware tests in CI pipeline |
+| `@Timeout` | JUnit 6 / 5 | `@Timeout(5)` — fail slow OCSP tests exceeding 5 seconds |
+| `@TempDir` | JUnit 6 / 5 | Inject temp directory for CRL file generation tests |
+| `@ExtendWith` | JUnit 6 / 5 | `@ExtendWith(MockitoExtension.class)`, `@ExtendWith(SpringExtension.class)` |
+| `@ActiveProfiles` | Spring Test | `@ActiveProfiles("test")` — activate test profile (H2, mock HSM) |
+| `@TestPropertySource` | Spring Test | Override `application.properties` for specific test scenarios |
+| `@DirtiesContext` | Spring Test | Force context reload after tests that modify Spring beans |
+| `@WithMockUser` | Spring Security | `@WithMockUser(roles = "RA_OFFICER")` — test RBAC authorization |
+| `@WithUserDetails` | Spring Security | Load real `UserDetails` from test `UserDetailsService` |
+
+---
+
+### 15F. TEST UTILITY LIBRARIES
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Apache Commons Lang | `commons-lang3` | **3.17.0** | `RandomStringUtils`, `StringUtils` — generate test DN strings, serial numbers |
+| Faker / Datafaker | Datafaker | **2.4.2** | Generate realistic test data: organization names, email SANs, IP addresses |
+| Awaitility | Awaitility | **4.2.2** | Poll async conditions: `await().until(() -> repo.findByStatus(ISSUED).isPresent())` |
+| Instancio | Instancio | **5.3.0** | Auto-generate populated Java objects for test fixtures — `CertificateRequest`, `AuditEvent` |
+| EasyRandom | Easy Random | **6.2.1** | Random `CertificateRequest` object generation for property-based tests |
+| Spring Test DBUnit | DBUnit + Spring | **1.3.0** | Seed database with test certificate data; verify DB state post-workflow |
+
+---
+
+## 16. ASCIIDOCTOR DOCUMENTATION TECH STACK
+
+> AsciiDoctor is used for generating **living documentation** — API docs, architecture guides,
+> and operator manuals — directly from test snippets and source code for the RA system.
+
+---
+
+### 16A. CORE ASCIIDOCTOR TOOLCHAIN
+
+| Component | Technology | Version (Latest) | Maven / Gradle Artifact | Purpose |
+|---|---|---|---|---|
+| Asciidoctor Maven Plugin | asciidoctor-maven-plugin | **3.2.0** | `org.asciidoctor:asciidoctor-maven-plugin:3.2.0` | Convert `.adoc` files → HTML5 / PDF / DocBook; main doc build tool |
+| Asciidoctor Gradle Plugin | asciidoctor-gradle-jvm | **4.0.3** | `org.asciidoctor.jvm.convert` | Gradle equivalent; `asciidoctorj { version = '3.0.0' }` |
+| AsciidoctorJ | AsciidoctorJ | **3.0.0** | `org.asciidoctor:asciidoctorj:3.0.0` | Java API wrapping Asciidoctor (JRuby-based); required by Maven/Gradle plugin |
+| AsciidoctorJ PDF | asciidoctorj-pdf | **2.3.19** | `org.asciidoctor:asciidoctorj-pdf:2.3.19` | Generate PDF output from `.adoc` — RA architecture docs, runbooks |
+| AsciidoctorJ EPUB3 | asciidoctorj-epub3 | **2.1.3** | `org.asciidoctor:asciidoctorj-epub3:2.1.3` | Generate EPUB3 e-book format from AsciiDoc |
+| Asciidoctor Diagram | asciidoctorj-diagram | **2.3.1** | `org.asciidoctor:asciidoctorj-diagram:2.3.1` | Render PlantUML, Mermaid, C4 diagrams inline in AsciiDoc |
+
+---
+
+### 16B. SPRING REST DOCS + ASCIIDOCTOR *(API Documentation from Tests)*
+
+| Component | Technology | Version (Latest) | Maven Artifact | Purpose |
+|---|---|---|---|---|
+| Spring REST Docs Core | spring-restdocs-core | **4.0.0** | `org.springframework.restdocs:spring-restdocs-core:4.0.0` | Generate documentation snippets from MockMvc / WebTestClient tests |
+| Spring REST Docs AsciiDoctor | spring-restdocs-asciidoctor | **4.0.0** | `org.springframework.restdocs:spring-restdocs-asciidoctor:4.0.0` | AsciidoctorJ 3.0 extension; include auto-generated snippets in `.adoc` files |
+| Spring REST Docs MockMvc | spring-restdocs-mockmvc | **4.0.0** | `org.springframework.restdocs:spring-restdocs-mockmvc:4.0.0` | Document EST `/simpleenroll`, OCSP, CRL endpoints via MockMvc tests |
+| Spring REST Docs WebTestClient | spring-restdocs-webtestclient | **4.0.0** | `org.springframework.restdocs:spring-restdocs-webtestclient:4.0.0` | Document reactive RA endpoints via `WebTestClient` |
+| Spring Auto REST Docs | spring-auto-restdocs | **2.0.11** | `capital.scalable:spring-auto-restdocs-core:2.0.11` | Auto-document request/response fields from Jackson + JavaDoc |
+
+**Spring REST Docs flow:**
+```
+MockMvc Test → REST Docs Snippets (.adoc) → Asciidoctor Maven Plugin → HTML5 / PDF API Docs
+```
+
+---
+
+### 16C. OPENAPI / SWAGGER DOCUMENTATION
+
+| Component | Technology | Version (Latest) | Maven Artifact | Purpose |
+|---|---|---|---|---|
+| SpringDoc OpenAPI UI | springdoc-openapi-starter-webmvc-ui | **2.6.0** | `org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0` | Auto-generate OpenAPI 3.1 spec + Swagger UI from Spring MVC annotations |
+| SpringDoc Gradle | springdoc-openapi-gradle-plugin | **2.6.0** | `org.springdoc:springdoc-openapi-gradle-plugin` | Generate `openapi.json` at build time (no running server needed) |
+| OpenAPI to AsciiDoc | swagger2markup | **1.3.7** | `io.github.swagger2markup:swagger2markup:1.3.7` | Convert OpenAPI 3.x JSON/YAML spec → AsciiDoc for offline docs |
+| Redoc | Redoc CLI | **2.3.x** | npm: `@redocly/cli` | Beautiful OpenAPI HTML docs from `openapi.json`; use in CI/CD |
+
+---
+
+### 16D. DOCUMENTATION OUTPUT FORMATS & THEMES
+
+| Component | Technology | Version | Purpose |
+|---|---|---|---|
+| AsciiDoc HTML5 | Asciidoctor built-in backend | 3.2.0 | Default HTML5 output; RA operator manual, architecture docs |
+| AsciiDoc PDF | AsciidoctorJ PDF | **2.3.19** | PDF output for compliance reports, key ceremony procedures, runbooks |
+| Antora | Antora (multi-repo docs site) | **3.2.1** | Publish versioned RA documentation site from Git; component-based |
+| Antora Default UI | antora-default-ui | **1.0.x** | Pre-built Antora UI theme |
+| PlantUML | PlantUML (via asciidoctorj-diagram) | **1.2025.x** | Architecture diagrams, sequence diagrams, RA workflow FSM diagrams |
+| Mermaid | Mermaid (via Kroki) | **11.x** | ER diagrams, flowcharts, Git graphs embedded in AsciiDoc |
+| Kroki | Kroki (diagram rendering service) | **0.25.x** | Self-hosted diagram server for PlantUML/Mermaid in CI/CD |
+
+---
+
+### 16E. DOCUMENTATION STRUCTURE FOR RA SYSTEM
+
+```
+docs/
+├── src/
+│   ├── index.adoc                    ← Master document
+│   ├── architecture/
+│   │   ├── overview.adoc             ← System architecture (PlantUML diagrams)
+│   │   ├── tech-stack.adoc           ← This document (auto-included)
+│   │   └── data-model.adoc           ← PostgreSQL schema (Mermaid ERD)
+│   ├── api/
+│   │   ├── est-api.adoc              ← EST endpoints (REST Docs snippets)
+│   │   ├── scep-api.adoc             ← SCEP endpoints
+│   │   ├── ocsp-api.adoc             ← OCSP responder
+│   │   └── operator-api.adoc         ← Operator REST API
+│   ├── operations/
+│   │   ├── key-ceremony.adoc         ← HSM key ceremony procedure
+│   │   ├── runbook.adoc              ← Ops runbook
+│   │   └── compliance.adoc           ← FIPS/eIDAS compliance checklist
+│   └── security/
+│       └── hardening.adoc            ← Security hardening guide
+└── pom.xml                           ← asciidoctor-maven-plugin 3.2.0
+```
+
+---
+
+### 16F. ASCIIDOCTOR MAVEN PLUGIN CONFIGURATION
+
+```xml
+<!-- pom.xml — AsciiDoctor documentation build -->
+<plugin>
+    <groupId>org.asciidoctor</groupId>
+    <artifactId>asciidoctor-maven-plugin</artifactId>
+    <version>3.2.0</version>
+    <dependencies>
+        <!-- PDF backend -->
+        <dependency>
+            <groupId>org.asciidoctor</groupId>
+            <artifactId>asciidoctorj-pdf</artifactId>
+            <version>2.3.19</version>
+        </dependency>
+        <!-- Diagram support (PlantUML, Mermaid) -->
+        <dependency>
+            <groupId>org.asciidoctor</groupId>
+            <artifactId>asciidoctorj-diagram</artifactId>
+            <version>2.3.1</version>
+        </dependency>
+        <!-- Spring REST Docs snippets integration -->
+        <dependency>
+            <groupId>org.springframework.restdocs</groupId>
+            <artifactId>spring-restdocs-asciidoctor</artifactId>
+            <version>4.0.0</version>
+        </dependency>
+    </dependencies>
+    <executions>
+        <!-- HTML5 output -->
+        <execution>
+            <id>generate-html-docs</id>
+            <phase>prepare-package</phase>
+            <goals><goal>process-asciidoc</goal></goals>
+            <configuration>
+                <backend>html5</backend>
+                <attributes>
+                    <snippets>${project.build.directory}/generated-snippets</snippets>
+                    <toc>left</toc>
+                    <icons>font</icons>
+                    <sectanchors>true</sectanchors>
+                </attributes>
+            </configuration>
+        </execution>
+        <!-- PDF output -->
+        <execution>
+            <id>generate-pdf-docs</id>
+            <phase>prepare-package</phase>
+            <goals><goal>process-asciidoc</goal></goals>
+            <configuration>
+                <backend>pdf</backend>
+                <attributes>
+                    <pdf-theme>default-with-font-awesome</pdf-theme>
+                </attributes>
+            </configuration>
+        </execution>
+    </executions>
+</plugin>
+```
+
+---
+
+### 16G. DOCUMENTATION VERSION MANIFEST
+
+| Artifact | Group ID | Version |
+|---|---|---|
+| `asciidoctor-maven-plugin` | `org.asciidoctor` | **3.2.0** |
+| `asciidoctorj` | `org.asciidoctor` | **3.0.0** |
+| `asciidoctorj-pdf` | `org.asciidoctor` | **2.3.19** |
+| `asciidoctorj-diagram` | `org.asciidoctor` | **2.3.1** |
+| `asciidoctorj-epub3` | `org.asciidoctor` | **2.1.3** |
+| `spring-restdocs-core` | `org.springframework.restdocs` | **4.0.0** |
+| `spring-restdocs-asciidoctor` | `org.springframework.restdocs` | **4.0.0** |
+| `spring-restdocs-mockmvc` | `org.springframework.restdocs` | **4.0.0** |
+| `springdoc-openapi-starter-webmvc-ui` | `org.springdoc` | **2.6.0** |
+| `antora` | npm: `@antora/cli` | **3.2.1** |
+| `plantuml` | via `asciidoctorj-diagram` | **1.2025.x** |
+
+---
+
 ## COMPLETE DEPENDENCY VERSION MANIFEST (pom.xml)
 
 ```xml
@@ -602,19 +900,31 @@ class CertificateRequestServiceIT {
     <opentelemetry.version>1.40.0</opentelemetry.version>
     <logstash-encoder.version>7.4</logstash-encoder.version>
 
-    <!-- ===== TESTING (see Section 14 for full Spring Boot Test stack) ===== -->
+    <!-- ===== TESTING (see Sections 14 & 15 for full Spring Boot Test stack) ===== -->
     <spring-boot-test.version>4.0.3</spring-boot-test.version>
     <spring-security-test.version>7.0.x</spring-security-test.version>
-    <junit.version>5.11.2</junit.version>
+    <junit6.version>6.0.3</junit6.version>                    <!-- Feb 15, 2026 — current gen -->
+    <junit5.version>5.13.4</junit5.version>                    <!-- Latest JUnit 5.x LTS fallback -->
+    <mockito.version>5.23.0</mockito.version>                  <!-- Mar 11, 2026 -->
+    <assertj.version>3.27.7</assertj.version>                  <!-- Jan 2026 — CVE patched -->
     <testcontainers.version>1.20.2</testcontainers.version>
-    <mockito.version>5.14.1</mockito.version>
     <wiremock.version>3.9.1</wiremock.version>
     <rest-assured.version>5.5.0</rest-assured.version>
+    <datafaker.version>2.4.2</datafaker.version>
+    <instancio.version>5.3.0</instancio.version>
+    <awaitility.version>4.2.2</awaitility.version>
     <jmh.version>1.37</jmh.version>
     <jacoco.version>0.8.12</jacoco.version>
     <pitest.version>1.17.1</pitest.version>
     <spotbugs.version>4.8.6</spotbugs.version>
     <owasp-dep-check.version>10.0.4</owasp-dep-check.version>
+    <!-- ===== DOCUMENTATION (see Section 16 for full AsciiDoctor stack) ===== -->
+    <asciidoctor-maven-plugin.version>3.2.0</asciidoctor-maven-plugin.version>
+    <asciidoctorj.version>3.0.0</asciidoctorj.version>
+    <asciidoctorj-pdf.version>2.3.19</asciidoctorj-pdf.version>
+    <asciidoctorj-diagram.version>2.3.1</asciidoctorj-diagram.version>
+    <spring-restdocs.version>4.0.0</spring-restdocs.version>
+    <springdoc-openapi.version>2.6.0</springdoc-openapi.version>
 </properties>
 ```
 
