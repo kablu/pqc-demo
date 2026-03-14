@@ -11,7 +11,6 @@
 | Component | Technology | Version (Latest) | Purpose |
 |---|---|---|---|
 | JDK Runtime | Eclipse Temurin (OpenJDK) | **21.0.3 LTS** | Primary Java runtime; Virtual Threads (Project Loom), ZGC garbage collector, long-term support until 2029 |
-| JDK Alt | Amazon Corretto | **21.0.3 LTS** | AWS-optimized OpenJDK distribution; drop-in Temurin alternative |
 | Application Framework | Spring Boot | **4.0.3** *(Feb 2026)* | Auto-configuration, embedded Tomcat 11, production-ready starter POMs; JSpecify null-safety, API Versioning, Java 25 support |
 | Core Framework | Spring Framework | **7.0.6** *(Mar 2026)* | Dependency injection, AOP, AOT compilation, virtual thread executor; Jakarta EE 11, JSpecify null annotations |
 | Web Layer | Spring Web MVC | **7.0.6** *(Mar 2026)* | REST controllers, EST/SCEP/CMP/ACME protocol endpoint handling; multiple-view-per-request support |
@@ -23,7 +22,6 @@
 | REST Documentation | SpringDoc OpenAPI (Swagger UI) | **2.6.0** | Auto-generated API docs from annotations |
 | Input Validation | Hibernate Validator (Jakarta) | **8.0.1.Final** | Bean validation for CSR fields, DN patterns, profile constraints |
 | JSON Serialization | Jackson Databind | **2.17.2** | REST payload serialization/deserialization |
-| gRPC (Internal) | grpc-spring-boot-starter | **3.1.0** | High-performance internal service-to-service communication |
 | Operator Frontend | React + TypeScript | **18.3 / 5.5** | RA Operator web portal — request approval, search, revocation UI |
 | Frontend Build | Vite | **5.4** | Fast React build tooling |
 
@@ -176,7 +174,6 @@
 |---|---|---|---|
 | HSM Hardware | Utimaco SecurityServer Se Series | **v5.x** | FIPS 140-2 Level 3 validated HSM; RA signing key storage |
 | HSM Alt (On-Prem) | Thales Luna Network HSM 7 | **7.x** | Alternative FIPS 140-3 Level 3 HSM |
-| HSM Alt (Cloud) | AWS CloudHSM | **Latest** | Cloud-native FIPS 140-2 Level 3; for hybrid AWS deployments |
 | HSM Alt (Cloud) | Azure Dedicated HSM | **Latest** | Azure FIPS 140-2 Level 3 dedicated HSM |
 | PKCS#11 Bridge | SunPKCS11 (JDK built-in provider) | **JDK 21** | JCE-to-PKCS#11 bridge; enables `KeyStore.getInstance("PKCS11")` |
 | PKCS#11 Middleware | Utimaco CryptoServer JCE/PKCS#11 | **v5.x** | Native PKCS#11 library `.so` / `.dll` loaded by SunPKCS11 |
@@ -198,10 +195,9 @@
 | EJBCA Java Client | EJBCA WS / REST client | **8.3.x** | SOAP/REST API for certificate issuance, revocation, profile management |
 | CA Certificate Cache | Caffeine (local L1) | **3.1.8** | Cache CA certificate chain in memory; refresh every 24h or on change |
 | CA Failover | Spring Retry + CircuitBreaker (Resilience4j) | **2.2.0** | Retry failed CA calls; open circuit after 5 failures; fallback to queue |
-| Multiple CA Support | CA Connector abstraction interface | Custom impl | Pluggable `CaConnector` interface; supports EJBCA, MS ADCS, AWS Private CA |
+| Multiple CA Support | CA Connector abstraction interface | Custom impl | Pluggable `CaConnector` interface; supports EJBCA, MS ADCS |
 | Certificate Profiles | EJBCA profile management | **8.3.x** | TLS/SSL, S/MIME, Code Signing, Client Auth, IoT Device profiles |
 | MS ADCS Integration | Microsoft ADCS via CEP/CES | Windows Server 2022 | Optional: enterprise Windows environments using MS PKI |
-| AWS Private CA | AWS ACM Private CA Java SDK | **2.28.x** | Optional: hybrid cloud RA forwarding to AWS-managed CA |
 
 ---
 
@@ -969,7 +965,6 @@ tasks.bootJar {
 | **immudb** | immudb (primary choice) | **1.9.5** | Server: Docker `codenotary/immudb:1.9.5` | Cryptographically verifiable, tamper-evident database; `verifiedSet` / `verifiedGet` throws on tampering |
 | immudb Java Client | immudb4j | **1.0.1** | `io.codenotary:immudb4j:1.0.1` | Java SDK; Spring Boot 4.0 compatible via `@Bean` config |
 | immudb Spring Boot | Custom Spring `@Configuration` | Custom | N/A — manual `ImmuClient` bean wiring | Wire `ImmuClient` as Spring bean; `@Transactional`-like audit pattern |
-| AWS QLDB (cloud alt) | Amazon QLDB | **Latest** | `software.amazon.qldb:amazon-qldb-driver-java:3.0.0` | Managed immutable ledger DB on AWS; cryptographic verification built-in |
 | Azure Immutable Blob | Azure Blob WORM (Time-based retention) | **Latest** | `com.azure:azure-storage-blob:12.x` | Azure write-once-read-many blob for log archival |
 
 ---
@@ -1075,7 +1070,6 @@ ApplicationEventPublisher.publishEvent(CertificateIssuedEvent)
 |---|---|---|
 | `immudb` (server) | **1.9.5** | Run via Docker / K8s |
 | `immudb4j` | **1.0.1** | `io.codenotary:immudb4j` |
-| `amazon-qldb-driver-java` | **3.0.0** | Cloud alternative |
 | `micrometer-core` (audit metrics) | **1.16.x** | Count audit writes |
 | `spring-kafka` | **3.3.x** | Audit event streaming |
 | `kafka` (server) | **3.8.0** | Audit topic broker |
@@ -1271,7 +1265,6 @@ val versions = mapOf(
 
     // ----- Immutable Logs (Section 18) -----
     "immudb4j"              to "1.0.1",
-    "amazonQldbDriver"      to "3.0.0",
 
     // ----- Testing (Sections 14 & 15) -----
     "springBootTest"        to "4.0.3",
@@ -1637,7 +1630,7 @@ notification:
 |---|---|---|---|
 | Dependency Vulnerability | OWASP Dependency-Check | **10.0.4** | `id("org.owasp.dependencycheck")`; NVD feed; fail on CVSS ≥ 7.0 |
 | Container Image Scan | Trivy | **0.56.2** | Scan Docker image for OS + library CVEs; integrated into GitHub Actions step |
-| Secrets Detection | TruffleHog / GitLeaks | **3.82.x / 8.x** | Pre-commit + CI scan; detect AWS keys, PEM, passwords in commits |
+| Secrets Detection | TruffleHog / GitLeaks | **3.82.x / 8.x** | Pre-commit + CI scan; detect API keys, PEM, passwords in commits |
 | SAST | Semgrep | **1.x** | Java rules + custom PKI-specific rules; auto PR annotations |
 | License Compliance | FOSSA / Gradle License Report | **3.x** | OSS license compatibility check; fail on GPL contamination |
 | SBOM Generation | Syft | **1.x** | Generate CycloneDX/SPDX SBOM per release artifact |
@@ -2069,79 +2062,11 @@ spotbugs                 = { id = "com.github.spotbugs",             version = "
 
 ---
 
-## 30. gRPC INTERNAL COMMUNICATIONS TECH STACK
-
-> High-performance, type-safe internal service-to-service communication within the RA multi-module system using gRPC + Protobuf over mTLS.
-
-### 30A. Core gRPC Stack
-
-| Component | Technology | Version | Gradle Artifact | Purpose / Notes |
-|---|---|---|---|---|
-| gRPC Runtime | gRPC Java | **1.68.1** | `implementation("io.grpc:grpc-netty-shaded:1.68.1")` | Core gRPC runtime with shaded Netty; HTTP/2 multiplexed transport |
-| Protobuf Runtime | Protocol Buffers (proto3) | **4.28.3** | `implementation("com.google.protobuf:protobuf-java:4.28.3")` | Schema-first IDL; `CertificateRequest.proto`, `RevocationRequest.proto` |
-| Spring Boot Integration | grpc-spring-boot-starter (LogNet) | **3.1.0** | `implementation("net.devh:grpc-spring-boot-starter:3.1.0")` | `@GrpcService`, `@GrpcClient` annotations; Spring Boot 4.0 compatible |
-| Code Generation | protoc + gRPC Java plugin | **4.28.3 / 1.68.1** | `id("com.google.protobuf") version "0.9.4"` (Gradle plugin) | Auto-generates stub classes from `.proto` files during build |
-| Kotlin Coroutines gRPC | grpc-kotlin | **1.4.1** | `implementation("io.grpc:grpc-kotlin-stub:1.4.1")` | Coroutine-based gRPC stubs for reactive patterns |
-| gRPC Health Check | grpc-health-checking | **1.68.1** | `implementation("io.grpc:grpc-services:1.68.1")` | Standard `grpc.health.v1.Health` service; K8s liveness probe compatible |
-| gRPC Reflection | gRPC Server Reflection | **1.68.1** | `implementation("io.grpc:grpc-services:1.68.1")` | Runtime service discovery; `grpcurl` introspection in dev |
-| Load Balancing | gRPC Client-side LB | **1.68.1 built-in** | `round_robin` policy | K8s pod-level LB; bypasses kube-proxy for L7 awareness |
-
-### 30B. gRPC Security
-
-| Component | Technology | Version | Purpose / Notes |
-|---|---|---|---|
-| Channel Security | mTLS (TLS 1.3) | TLS 1.3 | All gRPC channels use mutual TLS; certs from Vault PKI engine |
-| Service Mesh mTLS | Istio | **1.23.2** | Automatic mTLS injection via Envoy sidecar; `PeerAuthentication` STRICT mode |
-| Auth Metadata | JWT Bearer (gRPC metadata) | Spring Security 7.0.x | `Authorization: Bearer <JWT>` in gRPC call metadata; interceptor validates |
-| gRPC Auth Interceptor | Spring Security gRPC | Built-in LogNet starter | `@PreAuthorize` on `@GrpcService` methods; role-based access |
-
-### 30C. Internal gRPC Services (RA Domain)
-
-| Service | Proto File | Methods | Consumer → Provider |
-|---|---|---|---|
-| Certificate Issuer | `certificate_service.proto` | `IssueCertificate`, `GetCertStatus` | `ra-api` → `ra-core` |
-| Crypto Operations | `crypto_service.proto` | `GenerateKeyPair`, `SignCSR`, `WrapKey` | `ra-core` → `ra-crypto` (HSM) |
-| Notification Dispatcher | `notification_service.proto` | `SendNotification`, `GetDeliveryStatus` | `ra-core` → `ra-notification` |
-| Audit Logger | `audit_service.proto` | `RecordEvent`, `QueryEvents` | All modules → `ra-observability` |
-| Batch Job Trigger | `batch_service.proto` | `TriggerJob`, `GetJobStatus` | REST API → `ra-batch` |
-
-### 30D. Gradle Protobuf Plugin Configuration
-
-```kotlin
-plugins {
-    id("com.google.protobuf") version "0.9.4"
-}
-
-protobuf {
-    protoc {
-        artifact = "com.google.protobuf:protoc:4.28.3"
-    }
-    plugins {
-        create("grpc") {
-            artifact = "io.grpc:protoc-gen-grpc-java:1.68.1"
-        }
-        create("grpckt") {
-            artifact = "io.grpc:protoc-gen-grpc-kotlin:1.4.1:jdk8@jar"
-        }
-    }
-    generateProtoTasks {
-        all().forEach {
-            it.plugins {
-                create("grpc")
-                create("grpckt")
-            }
-        }
-    }
-}
-```
-
----
-
-## 31. OAuth2 / OIDC DEEP-DIVE TECH STACK
+## 30. OAuth2 / OIDC DEEP-DIVE TECH STACK
 
 > Complete identity, authentication, and authorization stack for the RA system — operators, automated services, HSM access, and external CA integrations.
 
-### 31A. Core OAuth2 / OIDC Components
+### 30A. Core OAuth2 / OIDC Components
 
 | Component | Technology | Version | Gradle Artifact | Purpose / Notes |
 |---|---|---|---|---|
@@ -2153,17 +2078,17 @@ protobuf {
 | Token Introspection | RFC 7662 Introspection | Spring Security built-in | `security.oauth2.resourceserver.opaque-token.introspection-uri` | Opaque token validation option (Keycloak introspection endpoint) |
 | Device Auth Flow | RFC 8628 Device Flow | Keycloak 25.0.6 | Keycloak config | CLI tool + HSM appliance authentication without browser |
 
-### 31B. Token Strategy
+### 30B. Token Strategy
 
 | Token Type | Format | Lifetime | Storage | Usage |
 |---|---|---|---|---|
 | Access Token | JWT (RS256 / ES256) | 15 min | Memory only (React state) | API calls: `Authorization: Bearer <token>` |
 | Refresh Token | Opaque | 8 h | `httpOnly` Secure cookie | Silent refresh via PKCE flow |
 | ID Token | JWT (OIDC) | 15 min | Memory only | User info: name, email, roles display |
-| Service Token | JWT (Client Credentials) | 1 h | Spring Security context | Service-to-service gRPC + REST calls |
+| Service Token | JWT (Client Credentials) | 1 h | Spring Security context | Service-to-service REST calls |
 | mTLS Client Cert | X.509 | 1 year | TLS handshake | HSM + CA backend auth (CMP over HTTPS) |
 
-### 31C. Spring Security Configuration Reference
+### 30C. Spring Security Configuration Reference
 
 ```kotlin
 @Configuration
@@ -2200,7 +2125,7 @@ class SecurityConfig {
 }
 ```
 
-### 31D. Keycloak Realm Configuration (RA Realm)
+### 30D. Keycloak Realm Configuration (RA Realm)
 
 | Config Item | Value | Notes |
 |---|---|---|
@@ -2215,7 +2140,7 @@ class SecurityConfig {
 | Refresh Token Lifetime | 28800s (8 h) | Session max; revoked on logout |
 | Post-Quantum Ready | JWS: ES256 (ECDSA) | Migrate to ML-DSA when Keycloak supports JEP 497 |
 
-### 31E. Scope & Role Matrix
+### 30E. Scope & Role Matrix
 
 | Role | Scope | Access Level | Assigned To |
 |---|---|---|---|
