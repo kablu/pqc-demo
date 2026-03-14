@@ -849,6 +849,394 @@ docs/
 
 ---
 
+## 17. OBSERVABILITY & METRICS TECH STACK *(Spring Boot 4.0 Compatible)*
+
+> Spring Boot 4.0 renames observability modules and introduces a new `spring-boot-starter-opentelemetry`.
+> Micrometer 1.16.x is the aligned version for Spring Boot 4.0.x
+
+---
+
+### 17A. SPRING BOOT ACTUATOR & MICROMETER
+
+| Component | Technology | Version (Latest) | Maven Artifact | Purpose |
+|---|---|---|---|---|
+| Spring Boot Actuator | `spring-boot-starter-actuator` | **4.0.3** | `org.springframework.boot:spring-boot-starter-actuator` | Exposes `/actuator/health`, `/actuator/metrics`, `/actuator/info`, `/actuator/prometheus` |
+| Micrometer Core | Micrometer | **1.16.x** *(SB 4.0 aligned)* | `io.micrometer:micrometer-core:1.16.x` | Metrics facade — `Counter`, `Timer`, `Gauge`, `DistributionSummary` for RA business metrics |
+| Micrometer Prometheus | Micrometer Registry Prometheus | **1.16.x** | `io.micrometer:micrometer-registry-prometheus:1.16.x` | Expose metrics in Prometheus scrape format at `/actuator/prometheus` |
+| Micrometer Tracing | Micrometer Tracing | **1.6.x** | `io.micrometer:micrometer-tracing:1.6.x` | Distributed tracing bridge; `@Observed`, `@WithSpan` on cert issuance methods |
+| Micrometer Observation | `spring-boot-micrometer-observation` | **4.0.3** | Built into SB 4.0 | *(Renamed from `spring-boot-observation` in SB 4.0)* — `ObservationRegistry` |
+| Micrometer OTel Bridge | `micrometer-tracing-bridge-otel` | **1.6.x** | `io.micrometer:micrometer-tracing-bridge-otel` | Connect Micrometer Tracing → OpenTelemetry SDK for trace export |
+| Datasource Micrometer | datasource-micrometer | **1.0.6** | `net.ttddyy.observation:datasource-micrometer-spring-boot` | JDBC query metrics and tracing — monitor PostgreSQL query times |
+| Spring Boot OTel Starter | `spring-boot-starter-opentelemetry` | **4.0.3** *(NEW in SB 4.0)* | `org.springframework.boot:spring-boot-starter-opentelemetry` | All-in-one OpenTelemetry starter — OTLP export of metrics, traces, logs |
+
+**Key RA Custom Metrics (Micrometer):**
+
+| Metric Name | Type | Tags | Purpose |
+|---|---|---|---|
+| `ra.cert.requests.total` | Counter | `protocol`, `profile`, `status` | Total certificate requests by protocol/status |
+| `ra.cert.issuance.duration` | Timer | `profile` | Certificate issuance latency histogram |
+| `ra.hsm.operations.total` | Counter | `operation`, `result` | HSM sign/verify operation counts |
+| `ra.ocsp.requests.total` | Counter | `status` | OCSP responder request counts |
+| `ra.csr.validation.failures` | Counter | `reason` | CSR validation failure breakdown |
+| `ra.approval.queue.size` | Gauge | — | Pending approval queue depth |
+| `ra.cert.expiry.days` | Gauge | `serial`, `profile` | Days until certificate expiry (alert < 30) |
+| `ra.revocations.total` | Counter | `reason` | Revocations by reason code |
+
+---
+
+### 17B. OPENTELEMETRY (TRACES, METRICS, LOGS)
+
+| Component | Technology | Version (Latest) | Maven / Download | Purpose |
+|---|---|---|---|---|
+| OTel Java Agent | opentelemetry-javaagent | **1.60.1** *(Mar 2026)* | `io.opentelemetry.javaagent:opentelemetry-javaagent:1.60.1` | Zero-code auto-instrumentation; attach via `-javaagent:otel-agent.jar` |
+| OTel SDK | opentelemetry-sdk | **1.60.1** | `io.opentelemetry:opentelemetry-sdk:1.60.1` | Manual instrumentation SDK for custom spans in HSM operations |
+| OTel API | opentelemetry-api | **1.60.1** | `io.opentelemetry:opentelemetry-api:1.60.1` | API-only dependency for library code |
+| OTel Spring Boot | `spring-boot-starter-opentelemetry` | **4.0.3** | Built into Spring Boot 4.0 | OTLP metric/trace/log export; replaces manual OTel wiring |
+| OTLP Exporter | opentelemetry-exporter-otlp | **1.60.1** | `io.opentelemetry:opentelemetry-exporter-otlp` | Export traces → Grafana Tempo; metrics → Grafana Mimir |
+| Grafana Alloy | Grafana Alloy | **1.6.x** | `grafana/alloy` Docker | OpenTelemetry Collector replacement; route OTel signals to backends |
+
+---
+
+### 17C. METRICS BACKEND (PROMETHEUS + GRAFANA)
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Prometheus | Prometheus | **3.10.0** *(Feb 2026)* | Time-series metrics storage; scrape `/actuator/prometheus` every 15s |
+| Grafana | Grafana | **12.3** *(2026)* | Dashboards, alerting, log/trace/metric correlation; RA KPI dashboards |
+| Grafana Mimir | Grafana Mimir | **2.14.x** | Long-term metrics storage (scalable Prometheus); multi-tenant |
+| Prometheus Alertmanager | Alertmanager | **0.27.x** | Route alerts → PagerDuty, Slack, email on HSM failure / cert spike |
+| kube-prometheus-stack | Helm chart | **65.x** | All-in-one Prometheus + Grafana + Alertmanager for Kubernetes |
+| node-exporter | Prometheus Node Exporter | **1.8.x** | Host-level CPU, memory, disk metrics for RA nodes |
+| jmx-exporter | JMX Exporter | **1.1.x** | Expose JVM / Tomcat JMX metrics to Prometheus (fallback) |
+
+---
+
+### 17D. LOG AGGREGATION (GRAFANA LOKI STACK)
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Grafana Loki | Loki | **3.6.7** *(Feb 2026)* | Log aggregation backend; label-based indexing optimized for Kubernetes |
+| Grafana Alloy | Alloy (OTel Collector) | **1.6.x** | Ship logs from K8s pods → Loki; replaces Promtail |
+| Promtail | Promtail (legacy shipper) | **3.6.7** | K8s log shipper for Loki (use Alloy for new deployments) |
+| Logback Encoder | Logstash Logback Encoder | **7.4** | JSON structured logs; adds `traceId`, `spanId`, `requestId` MDC fields |
+| Logback Loki Appender | `loki4j-logback-appender` | **1.5.2** | Push logs directly from Spring Boot → Loki without Alloy (dev env) |
+| Elasticsearch (alt) | Elasticsearch | **8.15.2** | Alternative log store for full-text search; use if SIEM requires ELK |
+| Kibana (alt) | Kibana | **8.15.2** | Log visualization UI for Elasticsearch backend |
+
+---
+
+### 17E. DISTRIBUTED TRACING
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Grafana Tempo | Grafana Tempo | **2.7.x** | Distributed trace storage; integrates with Grafana for trace-to-log correlation |
+| Micrometer Tracing | Micrometer Tracing (OTel bridge) | **1.6.x** | `@Observed` on `issueCertificate()`, `validateCsr()` — auto-span creation |
+| OTel Java Agent | opentelemetry-javaagent | **1.60.1** | Auto-instrument Spring MVC, JDBC, Kafka, Redis, HTTP clients |
+| Jaeger (alt) | Jaeger | **2.2.x** | Alternative trace backend; use if already deployed in enterprise |
+| Zipkin (alt) | Zipkin | **3.4.x** | Lightweight alternative trace backend |
+
+---
+
+### 17F. HEALTH CHECKS & ALERTING
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Spring Boot Actuator Health | Built-in | **4.0.3** | `/actuator/health/liveness` + `/actuator/health/readiness` for K8s probes |
+| Custom Health Indicators | `HealthIndicator` interface | **4.0.3** | `HsmHealthIndicator`, `CaConnectorHealthIndicator`, `immudbHealthIndicator` |
+| Grafana Alerting | Grafana Alerting | **12.3** | Unified alerting engine; rules defined in Grafana or `alert.rules.yaml` |
+| Alertmanager | Prometheus Alertmanager | **0.27.x** | Route alerts → PagerDuty / Slack / email by severity |
+| PagerDuty Integration | PagerDuty Events API v2 | **v2** | On-call escalation for `CRITICAL` HSM failure, cert issuance anomaly |
+| Grafana OnCall | Grafana OnCall | **1.9.x** | On-call scheduling integrated with Grafana dashboards |
+
+---
+
+### 17G. SPRING BOOT 4.0 OBSERVABILITY — MODULE RENAME MAP
+
+> ⚠️ Spring Boot 4.0 renames observability auto-configuration modules:
+
+| Old Name (SB 3.x) | New Name (SB 4.0) | Root Package Change |
+|---|---|---|
+| `spring-boot-metrics` | `spring-boot-micrometer-metrics` | `...micrometer.metrics` |
+| `spring-boot-observation` | `spring-boot-micrometer-observation` | `...micrometer.observation` |
+| `spring-boot-tracing` | `spring-boot-micrometer-tracing` | `...micrometer.tracing` |
+| Manual OTel setup | `spring-boot-starter-opentelemetry` | New unified starter |
+
+---
+
+### 17H. OBSERVABILITY VERSION MANIFEST
+
+| Artifact | Version |
+|---|---|
+| `spring-boot-starter-actuator` | **4.0.3** |
+| `micrometer-core` | **1.16.x** |
+| `micrometer-registry-prometheus` | **1.16.x** |
+| `micrometer-tracing` | **1.6.x** |
+| `micrometer-tracing-bridge-otel` | **1.6.x** |
+| `spring-boot-starter-opentelemetry` | **4.0.3** |
+| `opentelemetry-javaagent` | **1.60.1** |
+| `opentelemetry-sdk` | **1.60.1** |
+| `logstash-logback-encoder` | **7.4** |
+| `loki4j-logback-appender` | **1.5.2** |
+| Prometheus (server) | **3.10.0** |
+| Grafana (server) | **12.3** |
+| Grafana Loki (server) | **3.6.7** |
+| Grafana Tempo (server) | **2.7.x** |
+| Grafana Mimir (server) | **2.14.x** |
+| Grafana Alloy (collector) | **1.6.x** |
+
+---
+
+## 18. IMMUTABLE LOGS TECH STACK *(Spring Boot 4.0 Compatible)*
+
+> PKI/RA systems require **tamper-evident, legally defensible audit logs**.
+> This section covers the complete immutable log stack — from append-only stores
+> to hash-chained databases and cryptographic log signing, all integrated with Spring Boot 4.0.
+
+---
+
+### 18A. IMMUTABLE / APPEND-ONLY LOG STORES
+
+| Component | Technology | Version (Latest) | Maven Artifact | Purpose |
+|---|---|---|---|---|
+| **immudb** | immudb (primary choice) | **1.9.5** | Server: Docker `codenotary/immudb:1.9.5` | Cryptographically verifiable, tamper-evident database; `verifiedSet` / `verifiedGet` throws on tampering |
+| immudb Java Client | immudb4j | **1.0.1** | `io.codenotary:immudb4j:1.0.1` | Java SDK; Spring Boot 4.0 compatible via `@Bean` config |
+| immudb Spring Boot | Custom Spring `@Configuration` | Custom | N/A — manual `ImmuClient` bean wiring | Wire `ImmuClient` as Spring bean; `@Transactional`-like audit pattern |
+| AWS QLDB (cloud alt) | Amazon QLDB | **Latest** | `software.amazon.qldb:amazon-qldb-driver-java:3.0.0` | Managed immutable ledger DB on AWS; cryptographic verification built-in |
+| Azure Immutable Blob | Azure Blob WORM (Time-based retention) | **Latest** | `com.azure:azure-storage-blob:12.x` | Azure write-once-read-many blob for log archival |
+
+---
+
+### 18B. HASH-CHAINED AUDIT LOGGING (POSTGRESQL)
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| PostgreSQL Audit Table | PostgreSQL + `audit_events` table | **16.4** | Relational audit store with `prev_hash` + `event_hash` columns; chain verified on read |
+| Hash Algorithm | SHA-256 (via BC FIPS) | BC FIPS **2.0.0** | `SHA256(prev_hash \|\| event_type \|\| actor \|\| timestamp \|\| data)` per row |
+| Hash Chain Verifier | Custom Spring Service | Spring Boot **4.0.3** | `AuditChainVerifierService` — walks entire chain; throws `ChainBrokenException` on tampering |
+| Spring Data JPA | Hibernate ORM | **6.5.3.Final** | Persist `AuditEvent` entities; `@EntityListeners(AuditListener.class)` |
+| `@PrePersist` Hook | Spring JPA Lifecycle | **4.0.3 / 6.5.x** | Compute `event_hash` before INSERT; chain to previous record's hash |
+| Flyway | Flyway | **10.18.0** | Migration script creates `audit_events` table with hash columns and index |
+
+**Hash Chain Schema:**
+```sql
+CREATE TABLE audit_events (
+    id              BIGSERIAL     PRIMARY KEY,
+    event_id        UUID          UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+    event_type      VARCHAR(64)   NOT NULL,     -- CERT_ISSUED, CERT_REVOKED, OPERATOR_LOGIN
+    actor           VARCHAR(256)  NOT NULL,     -- operator DN or subscriber DN
+    resource_id     VARCHAR(128),               -- certificate serial number
+    event_data      JSONB,                      -- full event payload
+    ip_address      INET,
+    event_time      TIMESTAMPTZ   DEFAULT NOW(),
+    prev_hash       CHAR(64),                   -- SHA-256 of previous row
+    event_hash      CHAR(64)      NOT NULL      -- SHA-256(prev_hash||event_type||actor||time||data)
+);
+```
+
+---
+
+### 18C. SPRING BOOT AUDIT LOGGING INTEGRATION
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Spring Data Auditing | `@EnableJpaAuditing` | **4.0.3** | Auto-populate `@CreatedDate`, `@CreatedBy`, `@LastModifiedDate` on entities |
+| Spring AOP Audit Aspect | Spring AOP (`@Aspect`) | **7.0.6** | `@Around` advice on `@AuditLog` annotated methods — capture before/after state |
+| Spring Events | `ApplicationEventPublisher` | **7.0.6** | Publish `CertificateIssuedEvent`, `RevocationRequestedEvent` → async audit handler |
+| Spring Async | `@Async` + Virtual Threads | JDK 21 | Non-blocking audit log writes — don't block main request thread |
+| Transactional Outbox | PostgreSQL + Spring Scheduler | **4.0.3** | Guaranteed audit event delivery to immudb even on service restart |
+| `@TransactionalEventListener` | Spring TX Events | **7.0.6** | Fire audit write AFTER main transaction commits — consistent audit trail |
+
+**Audit Flow:**
+```
+HTTP Request (EST/SCEP)
+    ↓
+CertificateRequestService.issue()  ← @AuditLog AOP aspect fires
+    ↓
+ApplicationEventPublisher.publishEvent(CertificateIssuedEvent)
+    ↓ (AFTER_COMMIT via @TransactionalEventListener)
+    ├── HashChainAuditService → PostgreSQL audit_events (hash-chained)
+    └── ImmudbAuditService    → immudb.verifiedSet(key, value)
+                                   ↓
+                              Kafka audit-events topic → SIEM
+```
+
+---
+
+### 18D. LOG SIGNING & CRYPTOGRAPHIC INTEGRITY
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Log Entry Signing | Bouncy Castle FIPS (ECDSA P-384) | **BC FIPS 2.0.0** | Sign audit log batches with HSM-backed RA signing key every 5 minutes |
+| Timestamp Authority | RFC 3161 TSA client (BC) | **BC 1.78.1** | Trusted timestamp on audit log batches; non-repudiation for compliance |
+| Merkle Tree Log | Custom implementation | Spring Boot 4.0.3 | Batch audit events into Merkle tree; store root hash in immudb |
+| immudb Verified Write | `immuClient.verifiedSet()` | **immudb4j 1.0.1** | Cryptographic proof returned on write; store proof alongside record |
+| Log Archive Signing | GPG / minisign | Runtime | Sign archived log files (CRL, OCSP logs) for long-term storage integrity |
+
+---
+
+### 18E. TAMPER-EVIDENT LOG STREAM (KAFKA + SIEM)
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Audit Event Stream | Apache Kafka | **3.8.0** | Real-time audit event stream: `ra.audit.events` topic |
+| Spring Kafka Producer | Spring Kafka | **3.3.x** | Publish `AuditEvent` JSON to Kafka after each cert operation |
+| Kafka Log Compaction | Kafka built-in | **3.8.0** | Retain all audit events indefinitely (`cleanup.policy=compact,delete`) |
+| Kafka TLS | SSL/TLS + mTLS | TLS 1.3 | Encrypt audit event stream in transit; mutual auth between RA and Kafka |
+| Splunk Forwarder | Splunk Universal Forwarder | **9.3.0** | Forward Kafka audit stream → Splunk SIEM for SOC monitoring |
+| SIEM Integration | IBM QRadar / MS Sentinel (alt) | Latest | Enterprise SIEM integration via Kafka Connect or Splunk |
+| Kafka Connect | Confluent Kafka Connect | **7.7.x** | Sink connector: Kafka `ra.audit.events` → Elasticsearch / Splunk |
+
+---
+
+### 18F. COMPLIANCE & LONG-TERM LOG RETENTION
+
+| Component | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Log Retention Policy | PostgreSQL partition + `pg_partman` | **5.1.0** | Monthly partition rotation; archive cold partitions to S3/NAS |
+| Audit Archive | S3 / MinIO + WORM policy | Latest | Write-once S3 buckets for 7-year log retention (FIPS/eIDAS requirement) |
+| MinIO | MinIO (S3-compatible) | **RELEASE.2026** | On-premises S3-compatible object store with WORM (Object Lock) |
+| Log Integrity Check | Scheduled `AuditChainVerifier` | Spring Scheduler | Nightly job: walks entire `audit_events` hash chain; alerts on break |
+| Compliance Reports | Spring Batch + JasperReports | **5.2.x / 6.21.3** | Monthly FIPS/eIDAS compliance reports from audit data |
+| Log Export API | Spring Boot REST | **4.0.3** | `GET /api/v1/audit/export?from=&to=` — export signed audit log for auditors |
+
+---
+
+### 18G. IMMUTABLE LOG VERSION MANIFEST
+
+| Artifact | Version | Notes |
+|---|---|---|
+| `immudb` (server) | **1.9.5** | Run via Docker / K8s |
+| `immudb4j` | **1.0.1** | `io.codenotary:immudb4j` |
+| `amazon-qldb-driver-java` | **3.0.0** | Cloud alternative |
+| `micrometer-core` (audit metrics) | **1.16.x** | Count audit writes |
+| `spring-kafka` | **3.3.x** | Audit event streaming |
+| `kafka` (server) | **3.8.0** | Audit topic broker |
+| `postgresql` (audit_events table) | **16.4** | Hash-chained store |
+| `flyway` (audit schema) | **10.18.0** | Audit table migration |
+| `bc-fips` (log signing) | **2.0.0** | ECDSA P-384 signing |
+| `bcprov-jdk18on` (TSA client) | **1.78.1** | RFC 3161 timestamps |
+| `pg_partman` | **5.1.0** | Partition management |
+| `splunk-universal-forwarder` | **9.3.0** | SIEM integration |
+
+---
+
+## 19. CLIENT TOOLS & DEVELOPER TOOLING
+
+> Developer and operator client tools required to connect to databases, metrics backends,
+> HSMs, message brokers, vaults, and other RA system services.
+
+---
+
+### 19A. DATABASE CLIENT TOOLS
+
+| Tool | Technology | Version (Latest) | Platform | Purpose |
+|---|---|---|---|---|
+| DBeaver | DBeaver Community | **24.2.x** | Windows / Mac / Linux | Universal DB client; connect to PostgreSQL 16 RA database; view `certificate_requests`, `audit_events` |
+| pgAdmin 4 | pgAdmin | **8.12** | Web / Desktop | Official PostgreSQL web GUI; query, backup, table management |
+| IntelliJ Database Tools | IntelliJ IDEA (built-in) | **2025.x** | IDE | IDE-integrated DB explorer; SQL console for dev-time queries |
+| psql | PostgreSQL CLI | **16.4** | CLI | Native PostgreSQL CLI client; scripted DB checks in CI/CD |
+| Flyway CLI | Flyway Desktop / CLI | **10.18.0** | CLI | Run schema migrations manually; check migration status |
+| DataGrip | DataGrip (JetBrains) | **2025.x** | Desktop | Advanced SQL IDE; ERD diagrams, query analysis |
+
+---
+
+### 19B. METRICS & MONITORING CLIENT TOOLS
+
+| Tool | Technology | Version (Latest) | Access | Purpose |
+|---|---|---|---|---|
+| Grafana Web UI | Grafana | **12.3** | `https://grafana.ra.internal:3000` | RA KPI dashboards: cert issuance rate, HSM ops, approval queue, OCSP |
+| Prometheus Web UI | Prometheus | **3.10.0** | `https://prometheus.ra.internal:9090` | Ad-hoc PromQL queries; check scrape targets; view raw metrics |
+| Grafana k6 Cloud | k6 | **0.54.x** | CLI + Cloud | Run load tests; `k6 run est-load-test.js` from developer machine |
+| Micrometer Test | `SimpleMeterRegistry` | **1.16.x** | Test scope | In-test metrics assertion: verify `ra.cert.requests.total` increments |
+| Spring Boot Actuator | Actuator endpoints | **4.0.3** | `https://ra:8443/actuator` | `curl /actuator/metrics/ra.cert.requests.total` — direct metric lookup |
+| Alertmanager UI | Alertmanager | **0.27.x** | `https://alertmanager.ra.internal:9093` | View active alerts, silence noisy alerts during maintenance |
+
+---
+
+### 19C. KAFKA & MESSAGING CLIENT TOOLS
+
+| Tool | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Kafka UI | Provectus Kafka UI | **0.7.2** | Web UI: browse `ra.audit.events`, `ra.cert.issued` Kafka topics; inspect messages |
+| kcat (kafkacat) | kcat | **1.7.0** | CLI producer/consumer: `kcat -C -t ra.audit.events -b kafka:9092` |
+| Kafka CLI tools | `kafka-console-consumer.sh` | **3.8.0** | Built-in CLI for topic inspection in dev/staging environments |
+| Redpanda Console | Redpanda Console | **2.7.x** | Alternative Kafka UI; topic browser, consumer group lag monitoring |
+| Spring Kafka Test | `EmbeddedKafkaBroker` | **3.3.x** | In-test embedded Kafka; no Docker needed for unit test Kafka producer/consumer |
+| Offset Explorer | Offset Explorer | **3.x** | Desktop GUI | Windows/Mac desktop Kafka browser; useful for ops team |
+
+---
+
+### 19D. HSM & CRYPTOGRAPHY CLIENT TOOLS
+
+| Tool | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Utimaco CryptoServer GUI | Utimaco Security Server Admin | **v5.x** | GUI admin tool for HSM slot management, key inventory, PIN change |
+| p11tool | GnuTLS p11tool | **3.8.x** | CLI: enumerate PKCS#11 slots, list keys, test HSM connectivity |
+| pkcs11-tool | OpenSC pkcs11-tool | **0.25.x** | CLI: `pkcs11-tool --list-keys --module /usr/lib/libcs_pkcs11_R2.so` |
+| SoftHSM2 | SoftHSM2 | **2.6.1** | Software HSM for local dev; PKCS#11 compatible; no hardware needed |
+| OpenSSL + PKCS#11 | OpenSSL + engine_pkcs11 | **3.3.x** | Test HSM signing: `openssl req -engine pkcs11 -key slot:0-id:1` |
+| keytool | JDK keytool | **JDK 21** | View PKCS#11 keystore: `keytool -list -storetype PKCS11 -providerClass sun.security.pkcs11.SunPKCS11` |
+| BC PKIX CLI | Bouncy Castle utilities (test scope) | **1.78.1** | Generate test CSRs, inspect X.509 cert fields, verify chains in developer scripts |
+
+---
+
+### 19E. SECRETS & VAULT CLIENT TOOLS
+
+| Tool | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Vault CLI | HashiCorp Vault CLI | **1.17.6** | `vault kv get secret/ra/hsm-pin` — developer secrets access |
+| Vault Web UI | Vault UI | **1.17.6** | Browser-based secrets explorer: `https://vault.ra.internal:8200/ui` |
+| Spring Vault | `spring-vault-core` | **3.1.2** | Application-level Vault integration; `@VaultPropertySource` |
+| Terraform Vault Provider | Terraform + Vault Provider | **4.4.x** | Infrastructure-as-code secret policy provisioning |
+| External Secrets Operator | ESO | **0.10.x** | K8s operator: sync Vault secrets → K8s Secrets automatically |
+
+---
+
+### 19F. REST & API CLIENT TOOLS
+
+| Tool | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| Postman | Postman | **11.x** | Test EST (`/simpleenroll`), OCSP, RA REST API manually; import OpenAPI spec |
+| Insomnia | Insomnia | **10.x** | REST client; mTLS client cert configuration for EST endpoint testing |
+| cURL | cURL | **8.10.x** | CLI: `curl --cert client.pem --key client.key https://ra/est/simpleenroll` |
+| HTTPie | HTTPie | **3.2.x** | Developer-friendly CLI: `http POST https://ra/api/v1/requests profile=TLS_SERVER` |
+| Swagger UI | SpringDoc OpenAPI (embedded) | **2.6.0** | `https://ra:8443/swagger-ui.html` — built-in API docs and test UI |
+| Redoc | Redoc UI | **2.3.x** | Clean OpenAPI docs rendering; embed in internal developer portal |
+| OpenSSL s_client | OpenSSL | **3.3.x** | `openssl s_client -connect ra:8443 -cert client.pem` — mTLS connection test |
+| est-client | libest / estclient | **3.2.0** | Reference EST client (Cisco); test `simpleenroll`, `cacerts` RFC 7030 compliance |
+
+---
+
+### 19G. CONTAINER & KUBERNETES CLIENT TOOLS
+
+| Tool | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| kubectl | Kubernetes CLI | **1.31.x** | Manage RA pods, services, config maps, secrets in K8s cluster |
+| Helm CLI | Helm | **3.16.x** | `helm upgrade ra-system ./charts/ra` — deploy RA system updates |
+| k9s | k9s | **0.32.x** | Terminal UI for Kubernetes; browse pods, logs, exec into RA containers |
+| Lens | Lens Desktop | **6.x** | GUI Kubernetes IDE; cluster management, log streaming, metrics view |
+| Docker Desktop | Docker Desktop | **4.34.x** | Local container development; run `docker compose up` for dev stack |
+| Lazydocker | lazydocker | **0.23.x** | Terminal UI for Docker: view RA containers, logs, stats |
+| Trivy CLI | Trivy | **0.56.2** | `trivy image harbor.internal/pki/ra-core:1.0.0` — manual CVE scan |
+| Harbor Web UI | Harbor | **2.11.1** | `https://harbor.ra.internal` — view images, scan results, image signing status |
+
+---
+
+### 19H. IDE & DEVELOPER TOOLS
+
+| Tool | Technology | Version (Latest) | Purpose |
+|---|---|---|---|
+| IntelliJ IDEA | IntelliJ IDEA Ultimate | **2025.3** | Primary IDE for RA Java development; Spring Boot, Kubernetes, database plugins |
+| VS Code | Visual Studio Code | **1.95.x** | AsciiDoc authoring, YAML editing, Docker Compose, React frontend |
+| Spring Boot DevTools | `spring-boot-devtools` | **4.0.3** | Hot reload in dev mode; auto-restart on class change |
+| Spring Boot CLI | Spring Boot CLI | **4.0.3** | `spring init` — scaffold new RA module via CLI |
+| start.spring.io | Spring Initializr | Web | Generate new RA sub-module skeleton with Spring Boot 4.0.3 dependencies |
+| jEnv / SDKMAN | jEnv / SDKMAN | Latest | Manage multiple JDK versions (JDK 21 for RA, JDK 17 for legacy modules) |
+| Maven Wrapper | mvnw | **3.9.9** | `./mvnw clean package` — reproducible builds without system Maven |
+| Gradle Wrapper | gradlew | **9.4.0** | `./gradlew build` — reproducible Gradle builds |
+
+---
+
 ## COMPLETE DEPENDENCY VERSION MANIFEST (pom.xml)
 
 ```xml
@@ -895,10 +1283,15 @@ docs/
     <!-- ===== RESILIENCE ===== -->
     <resilience4j.version>2.2.0</resilience4j.version>
 
-    <!-- ===== OBSERVABILITY ===== -->
-    <micrometer.version>1.13.6</micrometer.version>
-    <opentelemetry.version>1.40.0</opentelemetry.version>
+    <!-- ===== OBSERVABILITY (see Section 17 for full stack) ===== -->
+    <micrometer.version>1.16.x</micrometer.version>               <!-- SB 4.0 aligned -->
+    <micrometer-tracing.version>1.6.x</micrometer-tracing.version>
+    <opentelemetry.version>1.60.1</opentelemetry.version>          <!-- Mar 2026 -->
     <logstash-encoder.version>7.4</logstash-encoder.version>
+    <loki4j.version>1.5.2</loki4j.version>
+    <!-- ===== IMMUTABLE LOGS (see Section 18 for full stack) ===== -->
+    <immudb4j.version>1.0.1</immudb4j.version>
+    <amazon-qldb-driver.version>3.0.0</amazon-qldb-driver.version>
 
     <!-- ===== TESTING (see Sections 14 & 15 for full Spring Boot Test stack) ===== -->
     <spring-boot-test.version>4.0.3</spring-boot-test.version>
