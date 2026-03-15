@@ -9,10 +9,10 @@ const fs = require("fs");
 // ── Read & clean source ──────────────────────────────────────────────────────
 const raw = fs.readFileSync("RA_TechStack_Tables.md", "utf8");
 
-// Strip YAML/YML code blocks (```yaml ... ``` and ```yml ... ```)
-const noYaml = raw.replace(/```ya?ml[\s\S]*?```/gi, "");
+// Strip ALL code blocks (```any-language ... ```) — tech stack tables only
+const noCode = raw.replace(/```[\s\S]*?```/g, "");
 
-const lines = noYaml.split(/\r?\n/);
+const lines = noCode.split(/\r?\n/);
 
 // ── Colour palette ───────────────────────────────────────────────────────────
 const C = {
@@ -135,21 +135,7 @@ function flushTable() {
 }
 
 function flushCode() {
-  if (codeLines.length > 0) {
-    // render as monospace block
-    codeLines.forEach(cl => {
-      children.push(new Paragraph({
-        children: [new TextRun({ text: cl || " ", font: "Courier New", size: 16, color: "333333" })],
-        shading : { fill: C.codeBg, type: ShadingType.CLEAR },
-        indent  : { left: 360 },
-        spacing : { before: 0, after: 0 },
-        border  : {
-          left: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC" }
-        }
-      }));
-    });
-    children.push(new Paragraph({ children: [new TextRun("")], spacing: { after: 80 } }));
-  }
+  // Code blocks are fully stripped — nothing to render
   codeLines = [];
   inCode    = false;
   codeLang  = "";
