@@ -7,6 +7,7 @@ import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.Security;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
 /**
@@ -141,9 +142,10 @@ public class Task01_RsaKeyPairGeneration {
 
         // Print all registered providers for transparency in learning
         System.out.println("\n📋 Registered JCE Providers:");
+        int idx = 1;
         for (java.security.Provider p : Security.getProviders()) {
             System.out.printf("   [%d] %s v%.1f%n",
-                java.util.Arrays.asList(Security.getProviders()).indexOf(p) + 1,
+                idx++,
                 p.getName(),
                 p.getVersion());
         }
@@ -296,10 +298,10 @@ public class Task01_RsaKeyPairGeneration {
         System.out.println("📄 PEM Encoded Keys (Base64 DER encoding):");
 
         // ---- Public Key PEM ----
-        // getEncoded() returns DER bytes (binary). Base64.getMimeEncoder(64, "\n".getBytes())
+        // getEncoded() returns DER bytes (binary). Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.UTF_8))
         // converts to Base64 with 64-char line wrapping — standard PEM line length.
         String publicKeyPem = "-----BEGIN PUBLIC KEY-----\n"
-            + Base64.getMimeEncoder(64, "\n".getBytes())
+            + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.UTF_8))
                     .encodeToString(keyPair.getPublic().getEncoded())
             + "\n-----END PUBLIC KEY-----";
 
@@ -312,7 +314,7 @@ public class Task01_RsaKeyPairGeneration {
         // "BEGIN RSA PRIVATE KEY" = legacy PKCS#1 format — avoid for new code
         // "BEGIN ENCRYPTED PRIVATE KEY" = passphrase-protected PKCS#8 (production)
         String privateKeyPem = "-----BEGIN PRIVATE KEY-----\n"
-            + Base64.getMimeEncoder(64, "\n".getBytes())
+            + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.UTF_8))
                     .encodeToString(keyPair.getPrivate().getEncoded())
             + "\n-----END PRIVATE KEY-----";
 

@@ -12,6 +12,7 @@ import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.security.cert.X509CRL;
 import java.security.cert.X509CRLEntry;
 import java.time.Instant;
@@ -372,7 +373,7 @@ public class Task05_CrlGeneration {
         byte[] derBytes = crl.getEncoded();
 
         String pem = "-----BEGIN X509 CRL-----\n"
-            + Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(derBytes)
+            + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.UTF_8)).encodeToString(derBytes)
             + "\n-----END X509 CRL-----";
 
         System.out.println("📄 CRL in PEM Format (publish to CDP URL):");

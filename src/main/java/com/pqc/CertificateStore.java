@@ -56,7 +56,7 @@ public class CertificateStore {
      *
      * <p>Reused in Tasks 05 (CRL), 06 (OCSP), 07 (CMS), 08 (PKCS#12).</p>
      */
-    public static java.security.cert.X509Certificate entityCert;
+    public static X509Certificate entityCert;
 
     // Private constructor — prevent instantiation. This is a utility class.
     private CertificateStore() {}

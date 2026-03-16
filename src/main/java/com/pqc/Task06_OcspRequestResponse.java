@@ -24,6 +24,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import org.bouncycastle.operator.DigestCalculatorProvider;
 
 /**
  * =========================================================================
@@ -70,6 +71,14 @@ import java.util.Date;
  * @since   2026-03-15
  */
 public class Task06_OcspRequestResponse {
+
+    /** Shared SecureRandom instance — reused for nonce generation. */
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    /** Builds a BC digest calculator provider using the BouncyCastle provider. */
+    private static DigestCalculatorProvider buildDigestProvider() throws Exception {
+        return new JcaDigestCalculatorProviderBuilder().setProvider("BC").build();
+    }
 
     /**
      * Entry point — builds an OCSP request and then builds the signed response.
@@ -145,8 +154,7 @@ public class Task06_OcspRequestResponse {
 
         // DigestCalculatorProvider: provides SHA-1 digest for CertID computation
         // WHY SHA-1 here? CertID standard hash algorithm per RFC 6960
-        DigestCalculatorProvider digestProvider =
-            new JcaDigestCalculatorProviderBuilder().setProvider("BC").build();
+        DigestCalculatorProvider digestProvider = buildDigestProvider();
 
         // CertificateID uniquely identifies the certificate at this issuer
         // Parameters: (digestCalculator, issuerCert, certSerial)
@@ -167,7 +175,7 @@ public class Task06_OcspRequestResponse {
         // ---- Nonce Extension ----
         // Generate a random 16-byte nonce for replay protection
         byte[] nonceBytes = new byte[16];
-        new SecureRandom().nextBytes(nonceBytes); // cryptographically random bytes
+        SECURE_RANDOM.nextBytes(nonceBytes); // cryptographically random bytes
 
         // Add nonce as an OCSP extension
         // OCSPObjectIdentifiers.id_pkix_ocsp_nonce = OID for OCSP nonce extension
@@ -271,8 +279,7 @@ public class Task06_OcspRequestResponse {
         Date    nextUpdate = Date.from(now.plus(1, ChronoUnit.HOURS)); // cache for 1 hour
 
         // ---- Add Single Response for the requested cert ----
-        DigestCalculatorProvider digestProvider =
-            new JcaDigestCalculatorProviderBuilder().setProvider("BC").build();
+        DigestCalculatorProvider digestProvider = buildDigestProvider();
 
         // Recreate the CertID that matches the request
         CertificateID certId = new CertificateID(

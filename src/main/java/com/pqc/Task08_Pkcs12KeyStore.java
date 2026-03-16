@@ -2,8 +2,6 @@ package com.pqc;
 
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.FileOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -342,22 +340,15 @@ public class Task08_Pkcs12KeyStore {
     public static void saveKeystoreToFile(KeyStore keyStore, String filePath) throws Exception {
         System.out.println("💾 Saving PKCS#12 to: " + filePath);
 
-        // Serialize keystore to DER-encoded binary bytes
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-
         // store(outputStream, password)
         // password: used to compute HMAC-SHA256 over the entire keystore (integrity check)
-        // The output is the binary .p12 / .pfx file content
-        keyStore.store(baos, KEYSTORE_PASSWORD);
-
-        byte[] p12Bytes = baos.toByteArray();
-
-        // Write to disk
-        try (FileOutputStream fos = new FileOutputStream(filePath)) {
-            fos.write(p12Bytes);
+        // Write directly to file — avoids doubling peak memory via an intermediate byte[]
+        try (java.io.OutputStream out = new java.io.BufferedOutputStream(
+                new FileOutputStream(filePath))) {
+            keyStore.store(out, KEYSTORE_PASSWORD);
         }
 
-        System.out.printf("   ✔ Saved %d bytes → %s%n%n", p12Bytes.length, filePath);
+        System.out.printf("   ✔ Saved %d bytes → %s%n%n", Files.size(Paths.get(filePath)), filePath);
     }
 
     // =========================================================================
@@ -379,9 +370,6 @@ public class Task08_Pkcs12KeyStore {
     public static KeyStore loadKeystoreFromFile(String filePath) throws Exception {
         System.out.println("📂 Loading PKCS#12 from: " + filePath);
 
-        // Read raw bytes from file
-        byte[] p12Bytes = Files.readAllBytes(Paths.get(filePath));
-
         // Create a new PKCS12 keystore instance
         KeyStore ks = KeyStore.getInstance("PKCS12", "BC");
 
@@ -389,7 +377,11 @@ public class Task08_Pkcs12KeyStore {
         // password: used to verify the HMAC-SHA256 integrity check.
         // If password is wrong → UnrecoverableKeyException
         // If file is corrupted → IOException / KeyStoreException
-        ks.load(new ByteArrayInputStream(p12Bytes), KEYSTORE_PASSWORD);
+        // Stream directly from file — avoids loading the entire .p12 into a byte[]
+        try (java.io.InputStream in = new java.io.BufferedInputStream(
+                Files.newInputStream(Paths.get(filePath)))) {
+            ks.load(in, KEYSTORE_PASSWORD);
+        }
 
         System.out.printf("   ✔ Loaded PKCS#12 successfully — %d entries found%n%n", ks.size());
         return ks;
@@ -469,14 +461,14 @@ public class Task08_Pkcs12KeyStore {
         System.out.println("   server.ssl.enabled=true");
         System.out.println("   server.ssl.key-store=file:" + p12FilePath);
         System.out.println("   server.ssl.key-store-type=PKCS12");
-        System.out.println("   server.ssl.key-store-password=" + new String(KEYSTORE_PASSWORD));
+        System.out.println("   server.ssl.key-store-password=<keystore-password>");
         System.out.println("   server.ssl.key-alias=" + KEY_ALIAS);
         System.out.println();
         System.out.println("   # For mTLS (require client certificates):");
         System.out.println("   server.ssl.client-auth=NEED");
         System.out.println("   server.ssl.trust-store=file:" + p12FilePath);
         System.out.println("   server.ssl.trust-store-type=PKCS12");
-        System.out.println("   server.ssl.trust-store-password=" + new String(KEYSTORE_PASSWORD));
+        System.out.println("   server.ssl.trust-store-password=<keystore-password>");
         System.out.println("   ─────────────────────────────────────────────────────────\n");
     }
 }

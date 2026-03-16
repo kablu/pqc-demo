@@ -129,14 +129,6 @@ public class Task07_CmsSignedData {
      * attached signature is used. The verifier extracts data from the CMS.
      * Use case: signed email body (S/MIME), signed SCEP message.</p>
      *
-     * <p><b>CMSSignedDataGenerator steps:</b>
-     * <ol>
-     *   <li>Add signer info: which key+cert is signing</li>
-     *   <li>Add certificates: chain so verifier can validate signer's cert</li>
-     *   <li>generate(data, encapsulate=true): wrap data inside CMS</li>
-     * </ol>
-     * </p>
-     *
      * <p><b>Signed Attributes — WHY?</b><br>
      * CMS adds "signed attributes" automatically:
      * <ul>
@@ -153,45 +145,7 @@ public class Task07_CmsSignedData {
      */
     public static CMSSignedData createAttachedSignedData(byte[] data) throws Exception {
         System.out.println("✍️  Creating attached CMS SignedData...");
-
-        // Create the generator that will assemble the SignedData structure
-        CMSSignedDataGenerator gen = new CMSSignedDataGenerator();
-
-        // ---- Add Signer Info ----
-        // JcaSignerInfoGeneratorBuilder: builds a SignerInfo from key + cert
-        // digestProvider: computes message digest (SHA-384) of content
-        // SHA384withRSA: the overall signature algorithm (hash + encryption)
-        gen.addSignerInfoGenerator(
-            new JcaSignerInfoGeneratorBuilder(
-                new JcaDigestCalculatorProviderBuilder().setProvider("BC").build()
-            )
-            .build(
-                // ContentSigner: holds the private key and algorithm for signing
-                new JcaContentSignerBuilder("SHA384withRSA")
-                    .setProvider("BC")
-                    // WHY entity private key here? We're signing as the entity (device)
-                    // In RA audit signing, you'd use the RA officer's signing key
-                    .build(CertificateStore.entityKeyPair.getPrivate()),
-                // Signer's certificate — identifies who created the signature
-                CertificateStore.entityCert
-            )
-        );
-
-        // ---- Add Certificate Chain ----
-        // Including certs allows verifiers to build the chain without external lookups
-        // JcaCertStore wraps Java X509Certificate list into BC's certificate store format
-        gen.addCertificates(new JcaCertStore(List.of(
-            CertificateStore.entityCert,  // signer's cert
-            CertificateStore.caCert       // issuing CA cert (chain)
-        )));
-
-        // ---- Generate Signed Data ----
-        // CMSProcessableByteArray: wraps raw bytes as CMS processable content
-        CMSTypedData cmsData = new CMSProcessableByteArray(data);
-
-        // generate(data, encapsulate=true) — encapsulate=true means data IS included
-        CMSSignedData signedData = gen.generate(cmsData, true);
-
+        CMSSignedData signedData = buildSignedData(data, true);
         System.out.printf("✔ Attached CMS SignedData created (%d bytes)%n%n",
             signedData.getEncoded().length);
         return signedData;
@@ -220,35 +174,63 @@ public class Task07_CmsSignedData {
      */
     public static CMSSignedData createDetachedSignedData(byte[] data) throws Exception {
         System.out.println("✍️  Creating detached CMS SignedData...");
+        // generate(data, encapsulate=false) — signature still covers data, but bytes NOT stored in CMS
+        CMSSignedData detachedSig = buildSignedData(data, false);
+        System.out.printf("✔ Detached CMS SignedData created (%d bytes — smaller than attached)%n%n",
+            detachedSig.getEncoded().length);
+        return detachedSig;
+    }
 
+    /**
+     * Shared CMS SignedData builder — used by both attached and detached variants.
+     *
+     * <p><b>CMSSignedDataGenerator steps:</b>
+     * <ol>
+     *   <li>Add signer info: which key+cert is signing</li>
+     *   <li>Add certificates: chain so verifier can validate signer's cert</li>
+     *   <li>generate(data, encapsulate): true=attached, false=detached</li>
+     * </ol>
+     * </p>
+     *
+     * @param data        the bytes to sign
+     * @param encapsulate {@code true} to embed data in the CMS (attached),
+     *                    {@code false} to produce a detached signature
+     * @return the assembled {@link CMSSignedData}
+     * @throws Exception if signing fails
+     */
+    private static CMSSignedData buildSignedData(byte[] data, boolean encapsulate) throws Exception {
+        // Create the generator that will assemble the SignedData structure
         CMSSignedDataGenerator gen = new CMSSignedDataGenerator();
 
-        // Same signer setup as attached
+        // ---- Add Signer Info ----
+        // JcaSignerInfoGeneratorBuilder: builds a SignerInfo from key + cert
+        // digestProvider: computes message digest (SHA-384) of content
+        // SHA384withRSA: the overall signature algorithm (hash + encryption)
         gen.addSignerInfoGenerator(
             new JcaSignerInfoGeneratorBuilder(
                 new JcaDigestCalculatorProviderBuilder().setProvider("BC").build()
             ).build(
+                // ContentSigner: holds the private key and algorithm for signing
                 new JcaContentSignerBuilder("SHA384withRSA")
                     .setProvider("BC")
+                    // WHY entity private key here? We're signing as the entity (device)
+                    // In RA audit signing, you'd use the RA officer's signing key
                     .build(CertificateStore.entityKeyPair.getPrivate()),
+                // Signer's certificate — identifies who created the signature
                 CertificateStore.entityCert
             )
         );
 
+        // ---- Add Certificate Chain ----
+        // Including certs allows verifiers to build the chain without external lookups
+        // JcaCertStore wraps Java X509Certificate list into BC's certificate store format
         gen.addCertificates(new JcaCertStore(List.of(
-            CertificateStore.entityCert,
-            CertificateStore.caCert
+            CertificateStore.entityCert,  // signer's cert
+            CertificateStore.caCert       // issuing CA cert (chain)
         )));
 
-        CMSTypedData cmsData = new CMSProcessableByteArray(data);
-
-        // generate(data, encapsulate=false) — encapsulate=false = DETACHED signature
-        // The signature still covers the data, but data bytes NOT stored in CMS
-        CMSSignedData detachedSig = gen.generate(cmsData, false);
-
-        System.out.printf("✔ Detached CMS SignedData created (%d bytes — smaller than attached)%n%n",
-            detachedSig.getEncoded().length);
-        return detachedSig;
+        // CMSProcessableByteArray: wraps raw bytes as CMS processable content
+        return gen.generate(new CMSProcessableByteArray(data), encapsulate);
     }
 
     // =========================================================================
@@ -280,12 +262,7 @@ public class Task07_CmsSignedData {
         // If detached, we need to re-attach the original data for hash computation
         CMSSignedData toVerify = signedData;
         if (originalData != null && signedData.getSignedContent() == null) {
-            // replaceSigners() re-attaches data to a detached CMS for verification
-            toVerify = CMSSignedData.replaceSigners(
-                signedData,
-                signedData.getSignerInfos()
-            );
-            // Reconstruct with original data
+            // Reconstruct with original data so the digest can be computed for verification
             toVerify = new CMSSignedData(
                 new CMSProcessableByteArray(originalData),
                 signedData.toASN1Structure()

@@ -17,6 +17,7 @@ import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -66,6 +67,9 @@ import java.util.Base64;
  */
 public class Task03_CsrGeneration {
 
+    /** Shared SecureRandom instance — initialization is expensive; reuse across calls. */
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
     /**
      * Entry point — generates an RSA key pair and creates a PKCS#10 CSR.
      *
@@ -91,7 +95,6 @@ public class Task03_CsrGeneration {
         // CA ka keypair alag — trust hierarchy maintain hoti hai.
         System.out.println("🔑 Generating End-Entity (Subscriber) RSA-4096 Key Pair...");
         KeyPair entityKeyPair = Task01_RsaKeyPairGeneration.generateRsaKeyPair();
-        CertificateStore.entityKeyPair = entityKeyPair;
 
         // Step 2: Build the CSR
         PKCS10CertificationRequest csr = buildCsr(entityKeyPair, "device-001.company.com");
@@ -273,7 +276,7 @@ public class Task03_CsrGeneration {
 
         // Wrap DER bytes in PEM format (Base64 with 64-char line breaks)
         String pem = "-----BEGIN CERTIFICATE REQUEST-----\n"
-            + Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(derBytes)
+            + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.UTF_8)).encodeToString(derBytes)
             + "\n-----END CERTIFICATE REQUEST-----";
 
         System.out.println("📄 CSR in PEM Format (send this to RA/CA):");
@@ -343,6 +346,6 @@ public class Task03_CsrGeneration {
         // new BigInteger(64, random): generates a random 64-bit positive integer
         // 64 bits = sufficient entropy for serial uniqueness per CA
         // SecureRandom: cryptographically strong random source
-        return new BigInteger(64, new SecureRandom());
+        return new BigInteger(64, SECURE_RANDOM);
     }
 }
