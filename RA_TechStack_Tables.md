@@ -1,5 +1,5 @@
 # Registration Authority (RA) System — Technology Stack Reference Tables
-**Version:** 2.1 | **Date:** 2026-03-14 | **Project:** PKI Registration Authority
+**Version:** 2.2 | **Date:** 2026-03-16 | **Project:** PKI Registration Authority
 **Base:** Java 21 LTS + Spring Boot 4.0.3 + Spring Framework 7.0.6 + Gradle 9.4.0
 
 > ⚠️ **Migration Note:** Spring Boot 4.0 requires Java 17 minimum (Java 21 recommended). Upgrade path: `3.3.x → 3.5.x → 4.0.x`. Spring Framework 7.0 is the aligned core framework.
@@ -10,7 +10,7 @@
 
 | Component | Technology | Version (Latest) | Purpose |
 |---|---|---|---|
-| JDK Runtime | Eclipse Temurin (OpenJDK) | **21.0.3 LTS** | Primary Java runtime; Virtual Threads (Project Loom), ZGC garbage collector, long-term support until 2029 |
+| JDK Runtime | Eclipse Temurin (OpenJDK) | **21.0.6 LTS** *(Jan 2026)* | Primary Java runtime; Virtual Threads (Project Loom), ZGC garbage collector, long-term support until 2029 |
 | Application Framework | Spring Boot | **4.0.3** *(Feb 2026)* | Auto-configuration, embedded Tomcat 11, production-ready starter POMs; JSpecify null-safety, API Versioning, Java 25 support |
 | Core Framework | Spring Framework | **7.0.6** *(Mar 2026)* | Dependency injection, AOP, AOT compilation, virtual thread executor; Jakarta EE 11, JSpecify null annotations |
 | Web Layer | Spring Web MVC | **7.0.6** *(Mar 2026)* | REST controllers, EST/SCEP/CMP/ACME protocol endpoint handling; multiple-view-per-request support |
@@ -33,7 +33,7 @@
 |---|---|---|---|
 | Security Framework | Spring Security | **7.0.x** *(Spring Boot 4.0 aligned)* | AuthN/AuthZ, method-level RBAC (`@PreAuthorize`), filter chain; Jakarta EE 11 compatible |
 | OAuth2 / OIDC | Spring Security OAuth2 Resource Server | **7.0.x** | JWT validation, Keycloak token integration; Spring Boot 4.0 aligned |
-| Identity Provider | Keycloak | **25.0.6** | OIDC / OAuth2 / SAML2 identity broker; operator SSO, TOTP MFA |
+| Identity Provider | Keycloak | **26.1.4** *(Mar 2026)* | OIDC / OAuth2 / SAML2 identity broker; operator SSO, TOTP MFA |
 | LDAP / AD Integration | Spring LDAP | **3.2.4** | Active Directory user lookup, RA subscriber identity verification |
 | Secrets Management | HashiCorp Vault | **1.17.6** | HSM PIN storage, DB credentials, API keys — zero plaintext secrets |
 | Vault Spring Integration | Spring Vault | **3.1.2** | Dynamic secrets, lease renewal, PKI secrets engine |
@@ -46,7 +46,7 @@
 | Container Security | Distroless Java 21 base image | **latest** | No shell, no package manager — minimal attack surface |
 | Pod Security | Kubernetes Pod Security Standards | **Restricted** | `runAsNonRoot`, `readOnlyRootFilesystem`, drop ALL capabilities |
 | Image Signing | Cosign + Notation | **2.4.1 / 1.2.0** | Supply chain integrity — sign and verify container images |
-| CVE Scanning | Trivy | **0.56.2** | Container + dependency CVE scanning in CI/CD; block on CRITICAL |
+| CVE Scanning | Trivy | **0.58.1** *(Mar 2026)* | Container + dependency CVE scanning in CI/CD; block on CRITICAL |
 | RBAC (Application) | Spring Security + Keycloak Roles | **7.0.x** | RA_OPERATOR, RA_OFFICER, RA_MANAGER, RA_AUDITOR, RA_ADMIN |
 | Rate Limiting | Spring Cloud Gateway + Redis | **4.2.x** | Per-IP, per-subscriber, per-profile request throttling |
 | HTTP Security Headers | Spring Security (built-in) | **7.0.x** | HSTS, CSP, X-Frame-Options, X-Content-Type-Options |
@@ -73,13 +73,13 @@
 
 | Component | Technology | Version (Latest) | Purpose |
 |---|---|---|---|
-| Primary RDBMS | PostgreSQL | **16.4** | Core RA data: certificate requests, workflow state, entities, profiles |
+| Primary RDBMS | PostgreSQL | **16.8** *(Mar 2026)* | Core RA data: certificate requests, workflow state, entities, profiles |
 | JDBC Driver | PostgreSQL JDBC | **42.7.4** | Type-safe JDBC connectivity; SSL/TLS client cert auth to DB |
 | Connection Pool | HikariCP | **5.1.0** | Ultra-low latency connection pooling; built into Spring Boot |
 | ORM | Hibernate ORM | **6.5.3.Final** | JPA entity mapping; optimistic locking for concurrent request updates |
 | Data Access | Spring Data JPA | **3.3.4** | Repository abstraction, derived queries, pagination for cert search |
 | Schema Migration | Flyway | **10.18.0** | Versioned SQL migrations; repeatable scripts for reference data |
-| Partitioning | PostgreSQL native partitioning | **16.4** | Partition `certificates` table by `issued_at` month for query performance |
+| Partitioning | PostgreSQL native partitioning | **16.8** | Partition `certificates` table by `issued_at` month for query performance |
 | Backup & Recovery | pgBackRest | **2.53** | Continuous WAL archiving, point-in-time recovery (PITR), S3/local storage |
 | HA Replication | Patroni + etcd | **3.3.2 / 3.5.x** | PostgreSQL HA cluster with automatic failover; RPO < 15 min |
 | DB Secrets | HashiCorp Vault (DB secrets engine) | **1.17.6** | Dynamic short-lived DB credentials; no static passwords |
@@ -121,12 +121,12 @@
 
 | Component | Technology | Version (Latest) | Purpose |
 |---|---|---|---|
-| Metrics Library | Micrometer | **1.13.6** | JVM metrics, custom RA business metrics (cert issuance rate, queue depth) |
-| Metrics Backend | Prometheus | **2.54.1** | Time-series metrics scraping and storage |
-| Dashboards | Grafana | **11.2.0** | RA KPI dashboards: issuance rates, revocation counts, HSM ops, approval queue |
-| Alerting | Grafana Alertmanager | **0.27.0** | PagerDuty/Slack alerts for HSM failure, cert spike anomaly, expiry warnings |
-| Distributed Tracing | OpenTelemetry Java Agent | **1.40.0** | Auto-instrumentation of Spring Boot; trace per certificate request end-to-end |
-| Trace Backend | Grafana Tempo | **2.6.0** | Store and query distributed traces; integrates with Grafana UI |
+| Metrics Library | Micrometer | **1.16.x** *(SB 4.0 aligned)* | JVM metrics, custom RA business metrics (cert issuance rate, queue depth) |
+| Metrics Backend | Prometheus | **3.10.0** *(Mar 2026)* | Time-series metrics scraping and storage |
+| Dashboards | Grafana | **12.3.0** *(Mar 2026)* | RA KPI dashboards: issuance rates, revocation counts, HSM ops, approval queue |
+| Alerting | Grafana Alertmanager | **0.27.x** | PagerDuty/Slack alerts for HSM failure, cert spike anomaly, expiry warnings |
+| Distributed Tracing | OpenTelemetry Java Agent | **1.60.1** *(Mar 2026)* | Auto-instrumentation of Spring Boot; trace per certificate request end-to-end |
+| Trace Backend | Grafana Tempo | **2.7.x** | Store and query distributed traces; integrates with Grafana UI |
 | Log Aggregation | Elasticsearch | **8.15.2** | Centralized log storage and full-text search |
 | Log Processing | Logstash | **8.15.2** | Parse, enrich, and route structured logs from all RA services |
 | Log Shipper | Filebeat | **8.15.2** | Lightweight log forwarder from Kubernetes pods to Logstash |
@@ -157,7 +157,7 @@
 |---|---|---|---|
 | Immutable Audit Store | immudb | **1.9.5** | Cryptographically tamper-evident audit log; hash-chained, append-only |
 | immudb Java Client | immudb4j | **1.0.1** | `verifiedSet` / `verifiedGet` — throws exception if data was tampered |
-| Audit Event DB | PostgreSQL (`audit_events` table) | **16.4** | Relational audit log with hash-chain column; queryable for compliance reports |
+| Audit Event DB | PostgreSQL (`audit_events` table) | **16.8** | Relational audit log with hash-chain column; queryable for compliance reports |
 | Audit Log Signing | Hash-chained SHA-256 | Custom impl | Each audit record stores `SHA256(prev_hash + event_data)`; chain verifiable |
 | SIEM Pipeline | Splunk + Universal Forwarder | **9.3.0** | Real-time audit event forwarding to enterprise SIEM for SOC monitoring |
 | Compliance Reporting | Spring Batch + JasperReports | **5.1.2 / 6.21.3** | Scheduled compliance reports: issuance counts, revocations, operator actions |
@@ -973,7 +973,7 @@ tasks.bootJar {
 
 | Component | Technology | Version (Latest) | Purpose |
 |---|---|---|---|
-| PostgreSQL Audit Table | PostgreSQL + `audit_events` table | **16.4** | Relational audit store with `prev_hash` + `event_hash` columns; chain verified on read |
+| PostgreSQL Audit Table | PostgreSQL + `audit_events` table | **16.8** | Relational audit store with `prev_hash` + `event_hash` columns; chain verified on read |
 | Hash Algorithm | SHA-256 (via BC FIPS) | BC FIPS **2.0.0** | `SHA256(prev_hash \|\| event_type \|\| actor \|\| timestamp \|\| data)` per row |
 | Hash Chain Verifier | Custom Spring Service | Spring Boot **4.0.3** | `AuditChainVerifierService` — walks entire chain; throws `ChainBrokenException` on tampering |
 | Spring Data JPA | Hibernate ORM | **6.5.3.Final** | Persist `AuditEvent` entities; `@EntityListeners(AuditListener.class)` |
@@ -1073,7 +1073,7 @@ ApplicationEventPublisher.publishEvent(CertificateIssuedEvent)
 | `micrometer-core` (audit metrics) | **1.16.x** | Count audit writes |
 | `spring-kafka` | **3.3.x** | Audit event streaming |
 | `kafka` (server) | **3.8.0** | Audit topic broker |
-| `postgresql` (audit_events table) | **16.4** | Hash-chained store |
+| `postgresql` (audit_events table) | **16.8** | Hash-chained store |
 | `flyway` (audit schema) | **10.18.0** | Audit table migration |
 | `bc-fips` (log signing) | **2.0.0** | ECDSA P-384 signing |
 | `bcprov-jdk18on` (TSA client) | **1.78.1** | RFC 3161 timestamps |
@@ -1096,7 +1096,7 @@ ApplicationEventPublisher.publishEvent(CertificateIssuedEvent)
 | DBeaver | DBeaver Community | **24.2.x** | Windows / Mac / Linux | Universal DB client; connect to PostgreSQL 16 RA database; view `certificate_requests`, `audit_events` |
 | pgAdmin 4 | pgAdmin | **8.12** | Web / Desktop | Official PostgreSQL web GUI; query, backup, table management |
 | IntelliJ Database Tools | IntelliJ IDEA (built-in) | **2025.x** | IDE | IDE-integrated DB explorer; SQL console for dev-time queries |
-| psql | PostgreSQL CLI | **16.4** | CLI | Native PostgreSQL CLI client; scripted DB checks in CI/CD |
+| psql | PostgreSQL CLI | **16.8** | CLI | Native PostgreSQL CLI client; scripted DB checks in CI/CD |
 | Flyway CLI | Flyway Desktop / CLI | **10.18.0** | CLI | Run schema migrations manually; check migration status |
 | DataGrip | DataGrip (JetBrains) | **2025.x** | Desktop | Advanced SQL IDE; ERD diagrams, query analysis |
 
@@ -1179,7 +1179,7 @@ ApplicationEventPublisher.publishEvent(CertificateIssuedEvent)
 | Lens | Lens Desktop | **6.x** | GUI Kubernetes IDE; cluster management, log streaming, metrics view |
 | Docker Desktop | Docker Desktop | **4.34.x** | Local container development; run `docker compose up` for dev stack |
 | Lazydocker | lazydocker | **0.23.x** | Terminal UI for Docker: view RA containers, logs, stats |
-| Trivy CLI | Trivy | **0.56.2** | `trivy image harbor.internal/pki/ra-core:1.0.0` — manual CVE scan |
+| Trivy CLI | Trivy | **0.58.1** | `trivy image harbor.internal/pki/ra-core:1.0.0` — manual CVE scan |
 | Harbor Web UI | Harbor | **2.11.1** | `https://harbor.ra.internal` — view images, scan results, image signing status |
 
 ---
@@ -1407,7 +1407,7 @@ testImplementation("io.github.resilience4j:resilience4j-test:$resilience4jVersio
 
 ## Section 21 — DBCP (Database Connection Pool) Tech Stack
 
-> **Purpose:** Connection pool layer between RA application and PostgreSQL 16.4. Covers HikariCP (primary), JDBC driver, pool monitoring, and tuning parameters for RA's write-heavy (certificate issuance) + read-heavy (OCSP/status) workloads.
+> **Purpose:** Connection pool layer between RA application and PostgreSQL 16.8. Covers HikariCP (primary), JDBC driver, pool monitoring, and tuning parameters for RA's write-heavy (certificate issuance) + read-heavy (OCSP/status) workloads.
 
 ### 21A — Core DBCP Components
 
@@ -1617,7 +1617,7 @@ notification:
 | Component | Technology | Version | Gradle Artifact / Tool | Purpose / Notes |
 |---|---|---|---|---|
 | Build Tool | Gradle | **9.4.0** | `./gradlew build` | Kotlin DSL multi-module build; incremental compilation, build cache |
-| Compiler | Eclipse Temurin | **21.0.3 LTS** | GitHub Actions `setup-java` | Primary JDK; `--release 21` flag enforced |
+| Compiler | Eclipse Temurin | **21.0.6 LTS** | GitHub Actions `setup-java` | Primary JDK; `--release 21` flag enforced |
 | Unit / Integration Tests | JUnit 6.0.3 + Testcontainers 1.20.2 | **6.0.3 / 1.20.2** | `./gradlew test` | Full test suite on every PR; containers for PG, Redis, Kafka |
 | Code Coverage | JaCoCo | **0.8.12** | `id("jacoco")` | Minimum 80% line coverage enforced; coverage report to Sonar |
 | Code Quality | SonarQube / SonarCloud | **10.6** | `id("org.sonarqube") version "5.1.0"` | SAST, code smells, duplication, branch analysis |
@@ -1629,7 +1629,7 @@ notification:
 | Component | Technology | Version | Purpose / Notes |
 |---|---|---|---|
 | Dependency Vulnerability | OWASP Dependency-Check | **10.0.4** | `id("org.owasp.dependencycheck")`; NVD feed; fail on CVSS ≥ 7.0 |
-| Container Image Scan | Trivy | **0.56.2** | Scan Docker image for OS + library CVEs; integrated into GitHub Actions step |
+| Container Image Scan | Trivy | **0.58.1** | Scan Docker image for OS + library CVEs; integrated into GitHub Actions step |
 | Secrets Detection | TruffleHog / GitLeaks | **3.82.x / 8.x** | Pre-commit + CI scan; detect API keys, PEM, passwords in commits |
 | SAST | Semgrep | **1.x** | Java rules + custom PKI-specific rules; auto PR annotations |
 | License Compliance | FOSSA / Gradle License Report | **3.x** | OSS license compatibility check; fail on GPL contamination |
@@ -1754,7 +1754,7 @@ JVM -D flags (emergency overrides)
 | Batch Auto-Config | Spring Boot Batch Starter | **4.0.3** | `implementation("org.springframework.boot:spring-boot-starter-batch:4.0.3")` | Auto JobRepository wiring; embedded H2 or PostgreSQL schema |
 | Job Scheduler | Quartz Scheduler | **2.5.0** | `implementation("org.springframework.boot:spring-boot-starter-quartz:4.0.3")` | Cron-based job triggers; clustered mode via `QRTZ_*` PostgreSQL tables |
 | Scheduler Alt | JobRunr | **7.3.1** | `implementation("org.jobrunr:jobrunr-spring-boot-3-starter:7.3.1")` | Lightweight alternative; dashboard UI; background job with retries |
-| Batch Job Store | PostgreSQL 16.4 | **16.4** | Via `spring-batch-core` schema | Job execution metadata; `BATCH_JOB_INSTANCE`, `BATCH_STEP_EXECUTION` tables |
+| Batch Job Store | PostgreSQL 16.8 | **16.8** | Via `spring-batch-core` schema | Job execution metadata; `BATCH_JOB_INSTANCE`, `BATCH_STEP_EXECUTION` tables |
 | Batch Metrics | Micrometer | **1.16.x** | `implementation("io.micrometer:micrometer-core:1.16.x")` | `spring.batch.job.*` metrics; step duration, item count, skip count to Prometheus |
 | Parallel Steps | Spring Batch Partitioning | **5.2.1** | Built-in `PartitionStep` | Parallel processing of certificate batches by partition key (date range, org) |
 | Remote Chunking | Spring Integration | **6.4.x** | `implementation("org.springframework.integration:spring-integration-core:6.4.x")` | Distribute chunk processing across worker pods via Kafka |
@@ -2023,8 +2023,8 @@ spotbugs                 = { id = "com.github.spotbugs",             version = "
 | Component | Technology | Version | Purpose / Notes |
 |---|---|---|---|
 | Continuous WAL Archival | pgBackRest | **2.52** | Continuous WAL archiving to S3/MinIO; point-in-time recovery (PITR); delta restore |
-| Logical Backup | `pg_dump` / `pg_dumpall` | **16.4** | Daily logical dumps; per-schema; compressed `.dump` files |
-| Streaming Replication | PostgreSQL Streaming Replication | **16.4 built-in** | Hot standby replica in secondary AZ; automatic failover via Patroni |
+| Logical Backup | `pg_dump` / `pg_dumpall` | **16.8** | Daily logical dumps; per-schema; compressed `.dump` files |
+| Streaming Replication | PostgreSQL Streaming Replication | **16.8 built-in** | Hot standby replica in secondary AZ; automatic failover via Patroni |
 | HA Cluster Manager | Patroni | **3.3.x** | PostgreSQL HA with etcd; automatic leader election; `pg_promote` on failover |
 | Connection Pool DR | PgBouncer | **1.23.x** | Transparent reconnect to new primary after Patroni failover |
 
@@ -2070,13 +2070,13 @@ spotbugs                 = { id = "com.github.spotbugs",             version = "
 
 | Component | Technology | Version | Gradle Artifact | Purpose / Notes |
 |---|---|---|---|---|
-| Identity Provider (IdP) | Keycloak | **25.0.6** | Deployed separately (K8s StatefulSet) | RA realm; OIDC / SAML 2.0; LDAP federation; MFA enforcement |
+| Identity Provider (IdP) | Keycloak | **26.1.4** | Deployed separately (K8s StatefulSet) | RA realm; OIDC / SAML 2.0; LDAP federation; MFA enforcement |
 | Resource Server (JWT) | Spring Security OAuth2 Resource Server | **7.0.x** | `implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server:4.0.3")` | JWT validation at API layer; `BearerTokenAuthenticationFilter` |
 | OAuth2 Client | Spring Security OAuth2 Client | **7.0.x** | `implementation("org.springframework.boot:spring-boot-starter-oauth2-client:4.0.3")` | PKCE auth-code flow for Operator Portal; token refresh |
 | Authorization Server | Spring Authorization Server | **1.4.x** | `implementation("org.springframework.security:spring-security-oauth2-authorization-server:1.4.x")` | Optional custom AS for service-to-service client credentials flow |
 | JWT Library | Nimbus JOSE + JWT | **9.48** | `implementation("com.nimbusds:nimbus-jose-jwt:9.48")` | Low-level JWT sign/verify; JWK Set parsing; used internally by Spring Security |
 | Token Introspection | RFC 7662 Introspection | Spring Security built-in | `security.oauth2.resourceserver.opaque-token.introspection-uri` | Opaque token validation option (Keycloak introspection endpoint) |
-| Device Auth Flow | RFC 8628 Device Flow | Keycloak 25.0.6 | Keycloak config | CLI tool + HSM appliance authentication without browser |
+| Device Auth Flow | RFC 8628 Device Flow | Keycloak 26.1.4 | Keycloak config | CLI tool + HSM appliance authentication without browser |
 
 ### 30B. Token Strategy
 
