@@ -261,14 +261,16 @@ const tocChildren = [
   new Paragraph({ children: [new TextRun("")], spacing: { after: 120 } }),
 
   // Native Word TOC field — hyperlink: true enables Ctrl+Click navigation
-  // headingStyleRange: "1-3" picks up H1, H2, H3 — press F9 in Word to update page numbers
+  // headingStyleRange: "1-4" picks up H1 (doc title), H2 (sections), H3 (subsections), H4 (each table)
+  // Press Ctrl+A → F9 in Word to update page numbers
   new TableOfContents("Table of Contents", {
     hyperlink          : true,
-    headingStyleRange  : "1-3",
+    headingStyleRange  : "1-4",
     stylesWithLevels   : [
       { styleId: "Heading1", level: 1 },
       { styleId: "Heading2", level: 2 },
       { styleId: "Heading3", level: 3 },
+      { styleId: "Heading4", level: 4 },
     ],
   }),
 
