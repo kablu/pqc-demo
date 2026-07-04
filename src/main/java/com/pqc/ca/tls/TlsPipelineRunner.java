@@ -152,8 +152,8 @@ public class TlsPipelineRunner {
             Extensions csrExts = Extensions.getInstance(attrs[0].getAttrValues().getObjectAt(0));
             Extension sanExt = csrExts.getExtension(Extension.subjectAlternativeName);
             if (sanExt != null) {
-                certBuilder.addExtension(Extension.subjectAlternativeName, false,
-                    GeneralNames.getInstance(sanExt.getParsedValue()));
+                // Pass Extension object directly — avoids DLSequence re-parse error
+                certBuilder.addExtension(sanExt);
                 log("[ISSUE] 4C: SAN copied from CSR");
             }
         }
