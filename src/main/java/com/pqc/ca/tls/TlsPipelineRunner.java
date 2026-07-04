@@ -149,7 +149,11 @@ public class TlsPipelineRunner {
         org.bouncycastle.asn1.pkcs.Attribute[] attrs = csr.getAttributes(
             org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers.pkcs_9_at_extensionRequest);
         if (attrs.length > 0) {
-            Extensions csrExts = Extensions.getInstance(attrs[0].getAttrValues().getObjectAt(0));
+            // Re-encode to DER + re-parse: avoids "unexpected object: DLSequence" from lazy decode
+            byte[] extEncoded = attrs[0].getAttrValues().getObjectAt(0)
+                .toASN1Primitive().getEncoded(org.bouncycastle.asn1.ASN1Encoding.DER);
+            Extensions csrExts = Extensions.getInstance(
+                org.bouncycastle.asn1.ASN1Primitive.fromByteArray(extEncoded));
             Extension sanExt = csrExts.getExtension(Extension.subjectAlternativeName);
             if (sanExt != null) {
                 // Decode OCTET STRING → raw bytes → ASN1Primitive → GeneralNames

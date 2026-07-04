@@ -402,8 +402,17 @@ public class Task04_IssueCertFromCsr {
             return null; // No extension request in CSR
         }
 
-        // First attribute, first value = the Extensions ASN.1 sequence
-        // getAttrValues().getObjectAt(0) navigates the ASN.1 structure
-        return Extensions.getInstance(attributes[0].getAttrValues().getObjectAt(0));
+        // Re-encode to DER bytes and re-parse to avoid DLSequence lazy-decode errors.
+        // Direct getInstance(getObjectAt(0)) can throw "unexpected object: DLSequence"
+        // because BouncyCastle's lazy parser stores sequences as DLSequence which some
+        // getInstance() calls reject. Encoding to DER and parsing fresh always works.
+        try {
+            byte[] encoded = attributes[0].getAttrValues().getObjectAt(0)
+                .toASN1Primitive().getEncoded(org.bouncycastle.asn1.ASN1Encoding.DER);
+            return Extensions.getInstance(
+                org.bouncycastle.asn1.ASN1Primitive.fromByteArray(encoded));
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
