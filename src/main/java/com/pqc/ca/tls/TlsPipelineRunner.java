@@ -152,8 +152,14 @@ public class TlsPipelineRunner {
             Extensions csrExts = Extensions.getInstance(attrs[0].getAttrValues().getObjectAt(0));
             Extension sanExt = csrExts.getExtension(Extension.subjectAlternativeName);
             if (sanExt != null) {
-                // Pass Extension object directly — avoids DLSequence re-parse error
-                certBuilder.addExtension(sanExt);
+                // Decode OCTET STRING → raw bytes → ASN1Primitive → GeneralNames
+                // Avoids both DLSequence and corrupted-stream parse errors
+                byte[] sanBytes = sanExt.getExtnValue().getOctets();
+                org.bouncycastle.asn1.x509.GeneralNames generalNames =
+                    org.bouncycastle.asn1.x509.GeneralNames.getInstance(
+                        org.bouncycastle.asn1.ASN1Primitive.fromByteArray(sanBytes));
+                certBuilder.addExtension(Extension.subjectAlternativeName,
+                    sanExt.isCritical(), generalNames);
                 log("[ISSUE] 4C: SAN copied from CSR");
             }
         }
