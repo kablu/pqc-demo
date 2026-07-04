@@ -297,8 +297,19 @@ public class Task04_IssueCertFromCsr {
         if (csrExtensions != null) {
             Extension san = csrExtensions.getExtension(Extension.subjectAlternativeName);
             if (san != null) {
-                certBuilder.addExtension(san);
-                System.out.println("   ✔ SAN extension copied from CSR to issued cert");
+                // Decode OCTET STRING bytes → ASN1Primitive → GeneralNames
+                // Direct addExtension(san) throws DLSequence / OCTET STRING parse errors
+                try {
+                    byte[] sanBytes = san.getExtnValue().getOctets();
+                    org.bouncycastle.asn1.x509.GeneralNames generalNames =
+                        org.bouncycastle.asn1.x509.GeneralNames.getInstance(
+                            org.bouncycastle.asn1.ASN1Primitive.fromByteArray(sanBytes));
+                    certBuilder.addExtension(Extension.subjectAlternativeName,
+                        san.isCritical(), generalNames);
+                    System.out.println("   ✔ SAN extension copied from CSR to issued cert");
+                } catch (Exception e) {
+                    System.out.println("   ⚠ SAN copy skipped: " + e.getMessage());
+                }
             }
         }
 
