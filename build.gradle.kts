@@ -25,3 +25,11 @@ dependencies {
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
 }
+
+tasks.register<JavaExec>("run") {
+    mainClass.set(
+        project.findProperty("mainClass") as String?
+            ?: "com.pqc.ca.CaHierarchyDemo"
+    )
+    classpath = sourceSets["main"].runtimeClasspath
+}

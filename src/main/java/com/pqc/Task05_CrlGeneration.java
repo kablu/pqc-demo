@@ -185,7 +185,8 @@ public class Task05_CrlGeneration {
 
         // ---- Create CRL Builder ----
         // JcaX509v2CRLBuilder(issuerDN, thisUpdate)
-        JcaX509v2CRLBuilder crlBuilder = new JcaX509v2CRLBuilder(issuerDn, thisUpdate);
+        JcaX509v2CRLBuilder crlBuilder = new JcaX509v2CRLBuilder(
+            CertificateStore.caCert, thisUpdate);
 
         // setNextUpdate: clients must refresh before this time
         crlBuilder.setNextUpdate(nextUpdate);
