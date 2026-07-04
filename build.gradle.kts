@@ -94,7 +94,8 @@ demoTask("ca-demo",  "com.pqc.ca.CaHierarchyDemo",                  "Two-tier CA
 
 // --- TLS Server Certificate Pipeline ---
 demoTask("tls-step01", "com.pqc.ca.tls.Step01_ServerKeyPairGeneration", "TLS: RSA-2048 server key pair")
-demoTask("tls-step02", "com.pqc.ca.tls.Step02_CsrGeneration",           "TLS: CSR with 10-attribute DN + 5 extensions")
+demoTask("tls-step02",    "com.pqc.ca.tls.Step02_CsrGeneration",           "TLS: CSR with 10-attribute DN + 5 extensions")
+demoTask("tls-pipeline", "com.pqc.ca.tls.TlsPipelineRunner",             "TLS: Full end-to-end pipeline (key → CSR → cert → verify)")
 
 // =========================================================================
 // `demos` task — list all available demo tasks
@@ -122,6 +123,7 @@ tasks.register("demos") {
         println("╠══════════════════╬═══════════════════════════════════════════════════╣")
         println("║ tls-step01       ║ TLS: RSA-2048 server key pair                    ║")
         println("║ tls-step02       ║ TLS: CSR with 10-attr DN + 5 extensions          ║")
+        println("║ tls-pipeline     ║ TLS: Full pipeline — key → CSR → cert → verify   ║")
         println("╠══════════════════╬═══════════════════════════════════════════════════╣")
         println("║ check            ║ Run Checkstyle + SpotBugs                        ║")
         println("║ checkstyleMain   ║ Checkstyle only                                  ║")
