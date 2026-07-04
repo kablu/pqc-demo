@@ -92,11 +92,17 @@ public class Step02_CsrInspector {
         org.bouncycastle.asn1.x500.X500Name subject = csr.getSubject();
         org.bouncycastle.asn1.x500.RDN[] rdns = subject.getRDNs();
         log("  Total RDNs : " + rdns.length);
+        log(String.format("  %-32s %-22s %-18s %s",
+                "Attribute Name (OID)", "OID", "ASN.1 Type", "Value"));
+        log("  " + "─".repeat(96));
         for (org.bouncycastle.asn1.x500.RDN rdn : rdns) {
             for (org.bouncycastle.asn1.x500.AttributeTypeAndValue atv : rdn.getTypesAndValues()) {
-                String oid = atv.getType().getId();
-                String val = atv.getValue().toString();
-                log(String.format("  [%-40s] = %s", oidName(oid) + "  OID:" + oid, val));
+                String oid     = atv.getType().getId();
+                ASN1Encodable rawVal = atv.getValue();
+                String asn1Type = asn1TypeName(rawVal.toASN1Primitive());
+                String val     = rawVal.toString();
+                log(String.format("  %-32s %-22s %-18s %s",
+                        oidName(oid), oid, asn1Type, val));
             }
         }
 
@@ -170,12 +176,21 @@ public class Step02_CsrInspector {
         boolean critical = ext.isCritical();
 
         log("\n  ┌──────────────────────────────────────────────────────");
-        log("  │ OID      : " + oidStr);
-        log("  │ Name     : " + name);
-        log("  │ Critical : " + critical);
+        log("  │ OID          : " + oidStr);
+        log("  │ Name         : " + name);
+        log("  │ Critical     : " + critical);
+        // extnValue wrapper type
+        ASN1OctetString extnVal = ext.getExtnValue();
+        log("  │ Wrapper Type : " + asn1TypeName(extnVal.toASN1Primitive())
+            + "  (" + extnVal.getOctets().length + " bytes inside)");
 
         // Decode extnValue OCTET STRING → raw extension bytes
-        byte[] valBytes = ext.getExtnValue().getOctets();
+        byte[] valBytes = extnVal.getOctets();
+        // Show the inner ASN.1 type
+        try {
+            ASN1Primitive inner = ASN1Primitive.fromByteArray(valBytes);
+            log("  │ Inner Type   : " + asn1TypeName(inner));
+        } catch (Exception ignored) { }
 
         try {
             if (oid.equals(Extension.subjectAlternativeName)) {
@@ -211,29 +226,37 @@ public class Step02_CsrInspector {
     // ── SAN decoder ─────────────────────────────────────────────────────────
 
     private static void printSan(byte[] bytes) throws Exception {
-        GeneralNames gns = GeneralNames.getInstance(ASN1Primitive.fromByteArray(bytes));
-        log("  │ Type     : SubjectAlternativeName");
-        log("  │ Entries  : " + gns.getNames().length);
+        ASN1Primitive inner = ASN1Primitive.fromByteArray(bytes);
+        GeneralNames gns = GeneralNames.getInstance(inner);
+        log("  │ ASN.1 Type : SEQUENCE OF GeneralName  (" + asn1TypeName(inner) + ")");
+        log("  │ Entries    : " + gns.getNames().length);
+        log("  │");
+        log("  │  #   GeneralName Tag         ASN.1 Inner Type    Value");
+        log("  │  " + "─".repeat(70));
+        int idx = 0;
         for (GeneralName gn : gns.getNames()) {
-            String type = switch (gn.getTagNo()) {
-                case GeneralName.rfc822Name              -> "rfc822Name (email)";
-                case GeneralName.dNSName                 -> "dNSName";
-                case GeneralName.uniformResourceIdentifier -> "URI";
-                case GeneralName.iPAddress               -> "iPAddress";
-                case GeneralName.registeredID            -> "registeredID";
-                case GeneralName.directoryName           -> "directoryName";
-                default                                  -> "tag[" + gn.getTagNo() + "]";
+            String tag = switch (gn.getTagNo()) {
+                case GeneralName.rfc822Name               -> "[1] rfc822Name";
+                case GeneralName.dNSName                  -> "[2] dNSName";
+                case GeneralName.uniformResourceIdentifier-> "[6] URI";
+                case GeneralName.iPAddress                -> "[7] iPAddress";
+                case GeneralName.registeredID             -> "[8] registeredID";
+                case GeneralName.directoryName            -> "[4] directoryName";
+                case GeneralName.otherName                -> "[0] otherName";
+                case GeneralName.x400Address              -> "[3] x400Address";
+                case GeneralName.ediPartyName             -> "[5] ediPartyName";
+                default                                   -> "[" + gn.getTagNo() + "]";
             };
+            // Determine inner ASN.1 type of the name value
+            String innerType = asn1TypeName(gn.getName().toASN1Primitive());
             String value = gn.getName().toString();
-            // iPAddress: raw bytes → dotted decimal
             if (gn.getTagNo() == GeneralName.iPAddress) {
                 byte[] ip = DEROctetString.getInstance(gn.getName()).getOctets();
-                if (ip.length == 4) {
-                    value = (ip[0] & 0xFF) + "." + (ip[1] & 0xFF) + "."
-                          + (ip[2] & 0xFF) + "." + (ip[3] & 0xFF);
-                }
+                innerType = "OCTET STRING (DER)  [" + ip.length + " bytes]";
+                if (ip.length == 4) value = (ip[0]&0xFF)+"."+  (ip[1]&0xFF)+"."+
+                                            (ip[2]&0xFF)+"."+  (ip[3]&0xFF);
             }
-            log("  │   [" + type + "] = " + value);
+            log(String.format("  │  %-3d %-26s %-20s %s", idx++, tag, innerType, value));
         }
     }
 
@@ -314,7 +337,7 @@ public class Step02_CsrInspector {
     private static void dumpAsn1(ASN1Primitive obj, String indent, int depth) {
         if (depth > 8) { log(indent + "... (max depth)"); return; }
         if (obj instanceof ASN1Sequence seq) {
-            log(indent + "SEQUENCE [" + seq.size() + " elements]");
+            log(indent + asn1TypeName(obj) + " [" + seq.size() + " elements]");
             Enumeration<?> e = seq.getObjects();
             while (e.hasMoreElements()) {
                 try { dumpAsn1(((ASN1Encodable) e.nextElement()).toASN1Primitive(),
@@ -322,7 +345,7 @@ public class Step02_CsrInspector {
                 catch (Exception ex) { log(indent + "  (parse error: " + ex.getMessage() + ")"); }
             }
         } else if (obj instanceof ASN1Set set) {
-            log(indent + "SET [" + set.size() + " elements]");
+            log(indent + asn1TypeName(obj) + " [" + set.size() + " elements]");
             Enumeration<?> e = set.getObjects();
             while (e.hasMoreElements()) {
                 try { dumpAsn1(((ASN1Encodable) e.nextElement()).toASN1Primitive(),
@@ -333,29 +356,72 @@ public class Step02_CsrInspector {
             log(indent + "OID  : " + oidObj.getId() + "  [" + oidName(oidObj.getId()) + "]");
         } else if (obj instanceof ASN1OctetString oct) {
             byte[] b = oct.getOctets();
-            log(indent + "OCTET STRING [" + b.length + " bytes] : " + toHexShort(b));
+            log(indent + asn1TypeName(obj) + " [" + b.length + " bytes] : " + toHexShort(b));
         } else if (obj instanceof ASN1BitString bits) {
-            log(indent + "BIT STRING [" + bits.getBytes().length + " bytes] : "
+            log(indent + asn1TypeName(obj) + " [" + bits.getBytes().length + " bytes] : "
                 + toHexShort(bits.getBytes()));
         } else if (obj instanceof ASN1Boolean bool) {
             log(indent + "BOOLEAN : " + bool.isTrue());
         } else if (obj instanceof ASN1Integer integer) {
             log(indent + "INTEGER : " + integer.getValue());
         } else if (obj instanceof ASN1UTF8String s) {
-            log(indent + "UTF8String : " + s.getString());
+            log(indent + "UTF8String : \"" + s.getString() + "\"");
         } else if (obj instanceof ASN1PrintableString s) {
-            log(indent + "PrintableString : " + s.getString());
+            log(indent + "PrintableString : \"" + s.getString() + "\"");
         } else if (obj instanceof DERIA5String s) {
-            log(indent + "IA5String : " + s.getString());
+            log(indent + "IA5String : \"" + s.getString() + "\"");
+        } else if (obj instanceof ASN1BMPString s) {
+            log(indent + "BMPString : \"" + s.getString() + "\"");
+        } else if (obj instanceof ASN1T61String s) {
+            log(indent + "TeletexString (T61) : \"" + s.getString() + "\"");
+        } else if (obj instanceof ASN1UTCTime t) {
+            log(indent + "UTCTime : " + t.getTime());
+        } else if (obj instanceof ASN1GeneralizedTime t) {
+            log(indent + "GeneralizedTime : " + t.getTime());
         } else if (obj instanceof ASN1TaggedObject tagged) {
-            log(indent + "TAGGED [" + tagged.getTagNo() + "] explicit=" + tagged.hasContextTag());
+            log(indent + "TAGGED [" + tagged.getTagNo() + "]  type=" + asn1TypeName(obj));
             try { dumpAsn1(tagged.getBaseObject().toASN1Primitive(), indent + "  ", depth + 1); }
             catch (Exception ex) { log(indent + "  (parse error: " + ex.getMessage() + ")"); }
         } else if (obj instanceof ASN1Null) {
             log(indent + "NULL");
         } else {
-            log(indent + obj.getClass().getSimpleName() + " : " + obj);
+            log(indent + asn1TypeName(obj) + " : " + obj);
         }
+    }
+
+    // ── ASN.1 type name resolver ─────────────────────────────────────────────
+
+    private static String asn1TypeName(ASN1Primitive p) {
+        if (p instanceof ASN1UTF8String)       return "UTF8String";
+        if (p instanceof ASN1PrintableString)  return "PrintableString";
+        if (p instanceof DERIA5String)         return "IA5String";
+        if (p instanceof ASN1BMPString)        return "BMPString";
+        if (p instanceof ASN1T61String)        return "TeletexString (T61)";
+        if (p instanceof ASN1GeneralString)    return "GeneralString";
+        if (p instanceof ASN1VisibleString)    return "VisibleString";
+        if (p instanceof ASN1UniversalString)  return "UniversalString";
+        if (p instanceof ASN1UTCTime)          return "UTCTime";
+        if (p instanceof ASN1GeneralizedTime)  return "GeneralizedTime";
+        if (p instanceof DEROctetString)       return "OCTET STRING (DER)";
+        if (p instanceof BEROctetString)       return "OCTET STRING (BER)";
+        if (p instanceof ASN1OctetString)      return "OCTET STRING";
+        if (p instanceof ASN1BitString)        return "BIT STRING";
+        if (p instanceof DERBitString)         return "BIT STRING (DER)";
+        if (p instanceof ASN1Boolean)          return "BOOLEAN";
+        if (p instanceof ASN1Integer)          return "INTEGER";
+        if (p instanceof ASN1Enumerated)       return "ENUMERATED";
+        if (p instanceof ASN1ObjectIdentifier) return "OID";
+        if (p instanceof ASN1Null)             return "NULL";
+        if (p instanceof DERSequence)          return "SEQUENCE (DER)";
+        if (p instanceof DLSequence)           return "SEQUENCE (DL)";
+        if (p instanceof BERSequence)          return "SEQUENCE (BER)";
+        if (p instanceof ASN1Sequence)         return "SEQUENCE";
+        if (p instanceof DERSet)               return "SET (DER)";
+        if (p instanceof DLSet)                return "SET (DL)";
+        if (p instanceof BERSet)               return "SET (BER)";
+        if (p instanceof ASN1Set)              return "SET";
+        if (p instanceof ASN1TaggedObject)     return "TAGGED [" + ((ASN1TaggedObject)p).getTagNo() + "]";
+        return p.getClass().getSimpleName();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
